@@ -15,11 +15,12 @@ import {
   exportAllGames,
   exportGame,
   getGameState,
+  listBotStrategies,
   listGames,
   playRound,
 } from "./modules/game.js";
 import { getStorePath } from "./modules/store.js";
-import logger from "./utils/logger.js";
+import logger, { matchStore } from "./utils/logger.js";
 
 const app = express();
 const port = Number(process.env.SERVER_PORT ?? 3000);
@@ -60,7 +61,9 @@ app.get("/", (req, res) => {
         host: hostname,
         port,
         storage: getStorePath(),
+        mode: "human-vs-bot",
       },
+      botStrategies: listBotStrategies(),
       endpoints: [
         "POST /auth/register",
         "POST /auth/login",
@@ -88,11 +91,21 @@ app.get("/server/information", (req, res) => {
         host: hostname,
         port,
         storage: getStorePath(),
+        mode: "human-vs-bot",
       },
       auth: {
         tokenType: "Bearer",
       },
+      botStrategies: listBotStrategies(),
     },
+  });
+});
+
+app.get("/logs", requireAuth, (req, res) => {
+  res.status(200).json({
+    status: true,
+    message: "Logs loaded.",
+    data: matchStore,
   });
 });
 

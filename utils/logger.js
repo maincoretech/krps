@@ -8,16 +8,27 @@ const date = () => {
   );
 };
 
+export const logStore = [];
+export const matchStore = [];
+const MAX_LOGS = 1000;
+
+const addLog = (level, msg, color) => {
+  const d = date();
+  logStore.push({ date: d, level, message: msg });
+  if (logStore.length > MAX_LOGS) logStore.shift();
+  console.log(d + color + `[${level.toUpperCase()}]\x1b[0m ` + msg);
+};
+
 const logger = {
-  info: (s) => {
-    console.log(date() + "\x1b[32m[INFO]\x1b[0m " + s);
-  },
-  warn: (s) => {
-    console.warn(date() + "\x1b[33m[WARN]\x1b[0m " + s);
-  },
-  error: (s) => {
-    console.error(date() + "\x1b[31m[ERROR]\x1b[0m " + s);
-  },
+  info: (s) => addLog("info", s, "\x1b[32m"),
+  warn: (s) => addLog("warn", s, "\x1b[33m"),
+  error: (s) => addLog("error", s, "\x1b[31m"),
+  match: (s) => {
+    const d = date();
+    matchStore.push({ date: d, level: "match", message: s });
+    if (matchStore.length > MAX_LOGS) matchStore.shift();
+    console.log(d + "\x1b[36m[MATCH]\x1b[0m " + s);
+  }
 };
 
 export default logger;
