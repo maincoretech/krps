@@ -33,6 +33,12 @@ jobs:
       - name: Build Minified Binary
         run: bun build --compile --minify --sourcemap=none --target=${{ matrix.target }} ./index.js --outfile=478-server-${{ matrix.target }}
 
+      - name: Compress with UPX (Linux & Windows)
+        if: "!contains(matrix.target, 'darwin')"
+        run: |
+          sudo apt-get update && sudo apt-get install -y upx-ucl
+          upx --best --lzma ./478-server-${{ matrix.target }}*
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
