@@ -78,10 +78,12 @@ jobs:
           fi
 
       - name: Publish to GitHub Releases
-        uses: softprops/action-gh-release@v2
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: ${{ steps.vars.outputs.tag }}
+          tag: ${{ steps.vars.outputs.tag }}
           name: Release ${{ steps.vars.outputs.tag }}
-          files: artifacts/*
+          artifacts: "artifacts/*"
+          allowUpdates: true
+          replacesArtifacts: true
           prerelease: ${{ steps.vars.outputs.prerelease }}
-          generate_release_notes: true
+          generateReleaseNotes: true
