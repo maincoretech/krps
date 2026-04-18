@@ -411,13 +411,12 @@ function chooseDefensiveBotCard(botHand, humanHand) {
   };
 }
 
-function chooseAdaptiveBotCard(game) {
-  const humanHand = game.players.A.hand;
+function chooseAdaptiveBotCard(game, inferredHand) {
   const botHand = game.players.B.hand;
-  const predictedHumanCard = getPredictedHumanCard(humanHand, game.history);
+  const predictedHumanCard = getPredictedHumanCard(inferredHand, game.history);    
 
   if (!predictedHumanCard) {
-    return chooseCounterBotCard(botHand, humanHand);
+    return chooseCounterBotCard(botHand, inferredHand);
   }
 
   const counterCard = COUNTER_CARD[predictedHumanCard];
@@ -428,18 +427,18 @@ function chooseAdaptiveBotCard(game) {
     };
   }
 
-  const fallback = chooseCounterBotCard(botHand, humanHand);
+  const fallback = chooseCounterBotCard(botHand, inferredHand);
   return {
     ...fallback,
     reason: `Machine predicted ${predictedHumanCard} but had no direct counter, so it used the best expected card.`,
   };
 }
 
-function chooseStreakBotCard(game) {
+function chooseStreakBotCard(game, inferredHand) {
   const lossStreak = game.players.B.consecutiveLosses;
 
   if (lossStreak >= 1) {
-    const aggressive = chooseCounterBotCard(game.players.B.hand, game.players.A.hand);
+    const aggressive = chooseCounterBotCard(game.players.B.hand, inferredHand);
     return {
       ...aggressive,
       reason: `Machine is on a losing streak (${lossStreak}) and switched to counter mode.`,
@@ -453,18 +452,30 @@ function chooseStreakBotCard(game) {
   };
 }
 
+function getInferredHumanHand(game) {
+  const allCards = ["scissors", "scissors", "scissors", "scissors", "rock", "rock", "rock", "paper", "paper", "paper"];
+  const outOfHands = [...allCards];
+  for (const card of game.players.B.hand) {
+    const idx = outOfHands.indexOf(card);
+    if (idx !== -1) outOfHands.splice(idx, 1);
+  }
+  return outOfHands;
+}
+
 function chooseBotCard(game) {
+  const inferredHand = getInferredHumanHand(game);
+
   switch (game.botStrategy) {
     case "pattern":
-      return choosePatternBotCard(game.players.B.hand, game.roundCount);
+      return choosePatternBotCard(game.players.B.hand, game.roundCount);        
     case "counter":
-      return chooseCounterBotCard(game.players.B.hand, game.players.A.hand);
+      return chooseCounterBotCard(game.players.B.hand, inferredHand);    
     case "adaptive":
-      return chooseAdaptiveBotCard(game);
+      return chooseAdaptiveBotCard(game, inferredHand);
     case "defensive":
-      return chooseDefensiveBotCard(game.players.B.hand, game.players.A.hand);
+      return chooseDefensiveBotCard(game.players.B.hand, inferredHand);  
     case "streak":
-      return chooseStreakBotCard(game);
+      return chooseStreakBotCard(game, inferredHand);
     case "random":
     default:
       return chooseRandomBotCard(game.players.B.hand);
@@ -473,7 +484,7 @@ function chooseBotCard(game) {
 
 function chooseBotExchangeCard(game) {
   const botHand = game.players.B.hand;
-  const humanHand = game.players.A.hand;
+  const inferredHand = getInferredHumanHand(game);
   const uniqueBotCards = getUniqueCards(botHand);
 
   if (game.botStrategy === "random") {
@@ -502,10 +513,10 @@ function chooseBotExchangeCard(game) {
   const ranked = uniqueBotCards
     .map((card) => ({
       card,
-      expectedScore: evaluateBotCardAgainstHumanHand(card, humanHand),
+      expectedScore: evaluateBotCardAgainstHumanHand(card, inferredHand),
       predictedScore: getBotOutcomeScore(
         card,
-        getPredictedHumanCard(humanHand, game.history) ?? humanHand[0]
+        getPredictedHumanCard(inferredHand, game.history) ?? inferredHand[0]
       ),
     }))
     .sort((left, right) => {
@@ -536,7 +547,9 @@ function refreshTieExchangeState(game) {
       continue;
     }
 
-    player.tieExchangeReady = game.tieCount === player.hand.length;
+    const tieCondition = game.tieCount > 0 && game.tieCount === player.hand.length;
+    const lossCondition = game.roundCount <= 3 && player.consecutiveLosses === 2;
+    player.tieExchangeReady = tieCondition || lossCondition;
   }
 }
 
@@ -548,31 +561,6 @@ function finishGameIfNeeded(game) {
     game.status = "finished";
     game.winner = "A";
   }
-}
-
-function applyOpeningLossExchange(game, loserId, roundSummary) {
-  if (game.roundCount > 3) {
-    return;
-  }
-
-  const loser = game.players[loserId];
-  if (loser.consecutiveLosses !== 2 || loser.hand.length === 0) {
-    return;
-  }
-
-  const cardToPool = loser.hand.shift();
-  game.pool.push(cardToPool);
-  const drawnCard = drawRandomCard(game.pool);
-  loser.hand.push(drawnCard);
-  loser.hand = sortCards(loser.hand);
-  game.pool = sortCards(game.pool);
-
-  roundSummary.specialActions.push({
-    type: "opening-loss-exchange",
-    playerId: loserId,
-    putIntoPool: cardToPool,
-    drew: drawnCard,
-  });
 }
 
 function autoResolveBotTieExchange(game, roundSummary) {
@@ -730,11 +718,6 @@ export function playRound(gameId, userId, payload) {
     playerB.hand = sortCards(playerB.hand);
     game.pool = sortCards(game.pool);
     game.roundCount = roundNumber;
-
-    if (winnerId) {
-      const loserId = winnerId === "A" ? "B" : "A";
-      applyOpeningLossExchange(game, loserId, roundSummary);
-    }
 
     finishGameIfNeeded(game);
     refreshTieExchangeState(game);

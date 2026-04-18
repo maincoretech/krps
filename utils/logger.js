@@ -10,7 +10,7 @@ const date = () => {
 
 export const logStore = [];
 export const matchStore = [];
-const MAX_LOGS = 1000;
+const MAX_LOGS = 50000;
 
 const addLog = (level, msg, color) => {
   const d = date();
