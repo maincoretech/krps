@@ -15,8 +15,13 @@ function resolveCliArgv(argv) {
 
   const rawArgv = process.argv.slice(1);
   const first = rawArgv[0];
-  if (first && fs.existsSync(first) && /\.(mjs|cjs|js|ts)$/i.test(first)) {
-    return rawArgv.slice(1);
+  if (first) {
+    if (first.includes("$bunfs")) {
+      return rawArgv.slice(1);
+    }
+    if (fs.existsSync(first) && /\.(mjs|cjs|js|ts)$/i.test(first)) {
+      return rawArgv.slice(1);
+    }
   }
   return rawArgv;
 }
@@ -54,7 +59,7 @@ function printStatus() {
 
 function getStartCommand() {
   const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
-  if (scriptPath && fs.existsSync(scriptPath) && scriptPath !== process.execPath) {
+  if (scriptPath && !scriptPath.includes("$bunfs") && fs.existsSync(scriptPath) && scriptPath !== process.execPath) {
     return `"${process.execPath}" "${scriptPath}" start`;
   }
   return `"${process.execPath}" start`;
