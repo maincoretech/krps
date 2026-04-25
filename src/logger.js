@@ -27,8 +27,11 @@ const logger = {
     const d = date();
     matchStore.push({ date: d, level: "match", message: s });
     if (matchStore.length > MAX_LOGS) matchStore.shift();
-    console.log(d + "\x1b[36m[MATCH]\x1b[0m " + s);
   }
 };
+
+export function getLogs(type = "app") {
+  return (type === "match" ? matchStore : logStore).slice();
+}
 
 export default logger;

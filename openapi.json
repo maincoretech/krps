@@ -1,0 +1,404 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "478 Card Game API",
+    "version": "1.0.0",
+    "description": "Persistent card-game backend API"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "summary": "Register user",
+        "tags": ["Auth"],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[a-zA-Z0-9_-]+$" },
+                  "password": { "type": "string", "minLength": 8 }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Login",
+        "tags": ["Auth"],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get current user profile",
+        "tags": ["Auth"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "tags": ["Auth"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/server/information": {
+      "get": {
+        "summary": "Get server info",
+        "tags": ["Server"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/games": {
+      "get": {
+        "summary": "Get game list",
+        "tags": ["Games"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "post": {
+        "summary": "Create human-vs-bot game",
+        "tags": ["Games"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "botStrategy": { "type": "string", "default": "random" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" }
+        }
+      }
+    },
+    "/games/{gameId}": {
+      "get": {
+        "summary": "Get game state",
+        "tags": ["Games"],
+        "parameters": [
+          { "name": "gameId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/games/{gameId}/round": {
+      "post": {
+        "summary": "Play round in human-vs-bot",
+        "tags": ["Games"],
+        "parameters": [
+          { "name": "gameId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cardA": { "type": "integer", "enum": [0, 1, 2] }
+                },
+                "required": ["cardA"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/games/{gameId}/exchange": {
+      "post": {
+        "summary": "Use tie-exchange in human-vs-bot",
+        "tags": ["Games"],
+        "parameters": [
+          { "name": "gameId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "playerId": { "type": "string", "enum": ["A"] },
+                  "card": { "type": "integer", "enum": [0, 1, 2] }
+                },
+                "required": ["playerId", "card"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/games/{gameId}/export": {
+      "get": {
+        "summary": "Export one game",
+        "tags": ["Games"],
+        "parameters": [
+          { "name": "gameId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/games-export": {
+      "get": {
+        "summary": "Export all games",
+        "tags": ["Games"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms": {
+      "get": {
+        "summary": "Get all rooms",
+        "tags": ["Rooms"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "post": {
+        "summary": "Create human-vs-human room",
+        "tags": ["Rooms"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "isPublic": { "type": "boolean", "default": true, "description": "Whether the room is visible in the public list" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" }
+        }
+      }
+    },
+    "/rooms/join": {
+      "post": {
+        "summary": "Join a waiting room",
+        "tags": ["Rooms"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "inviteCode": { "type": "string" }
+                },
+                "required": ["inviteCode"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms/{roomId}": {
+      "get": {
+        "summary": "Get room state",
+        "tags": ["Rooms"],
+        "parameters": [
+          { "name": "roomId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms/{roomId}/refresh-code": {
+      "post": {
+        "summary": "Refresh room invite code",
+        "tags": ["Rooms"],
+        "parameters": [
+          { "name": "roomId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms/{roomId}/start": {
+      "post": {
+        "summary": "Set ready state in waiting room",
+        "tags": ["Rooms"],
+        "parameters": [
+          { "name": "roomId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ready": { "type": "boolean" }
+                },
+                "required": ["ready"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms/{roomId}/round": {
+      "post": {
+        "summary": "Submit card in human-vs-human round",
+        "tags": ["Rooms"],
+        "parameters": [
+          { "name": "roomId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "card": { "type": "integer", "enum": [0, 1, 2] }
+                },
+                "required": ["card"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms/{roomId}/exchange": {
+      "post": {
+        "summary": "Use tie-exchange in human-vs-human",
+        "tags": ["Rooms"],
+        "parameters": [
+          { "name": "roomId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "card": { "type": "integer", "enum": [0, 1, 2] }
+                },
+                "required": ["card"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/rooms/{roomId}/rematch": {
+      "post": {
+        "summary": "Request rematch in room",
+        "tags": ["Rooms"],
+        "parameters": [
+          { "name": "roomId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ready": { "type": "boolean" }
+                },
+                "required": ["ready"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    }
+  }
+}

@@ -1,237 +1,31 @@
-import cors from "cors";
-import express from "express";
+#!/usr/bin/env bun
 import "dotenv/config";
-import {
-  AuthError,
-  authenticateToken,
-  loginUser,
-  logoutToken,
-  registerUser,
-} from "./modules/auth.js";
-import {
-  GameError,
-  createGame,
-  exchangeOnTie,
-  exportAllGames,
-  exportGame,
-  getGameState,
-  listBotStrategies,
-  listGames,
-  playRound,
-} from "./modules/game.js";
-import { getStorePath } from "./modules/store.js";
-import logger, { matchStore } from "./utils/logger.js";
+import http from "http";
+import { runCli } from "./src/cli.js";
+import { getRuntimeConfig } from "./src/system.js";
+import { initializeSysAdmin } from "./src/auth.js";
+import logger from "./src/logger.js";
+import { app, adminApp, setupWebSocket } from "./src/app.js";
 
-const app = express();
-const port = Number(process.env.SERVER_PORT ?? 3000);
-const hostname = process.env.SERVER_HOSTNAME ?? "0.0.0.0";
-const serverName = process.env.SERVER_NAME ?? "478 card game backend";
+const server = http.createServer(app);
+setupWebSocket(server);
 
-app.use(cors());
-app.use(express.json());
-
-function getBearerToken(req) {
-  const header = req.headers.authorization ?? "";
-  const [scheme, token] = header.split(" ");
-  if (scheme !== "Bearer" || !token) {
-    return null;
-  }
-
-  return token;
+async function boot() {
+  const config = getRuntimeConfig();
+  await initializeSysAdmin();
+  server.listen(config.serverPort, config.hostname, () => logger.info(`API/WS at ${config.serverPort}`));
+  adminApp.listen(config.adminPort, config.hostname, () => logger.info(`Admin at ${config.adminPort}`));
 }
 
-function requireAuth(req, res, next) {
-  try {
-    const auth = authenticateToken(getBearerToken(req));
-    req.auth = auth;
-    req.token = getBearerToken(req);
-    next();
-  } catch (error) {
-    next(error);
+async function main() {
+  const cliResult = await runCli();
+  if (!cliResult.shouldStartServer) {
+    process.exit(cliResult.exitCode ?? 0);
   }
+  await boot();
 }
 
-app.get("/", (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Server is up.",
-    data: {
-      server: {
-        name: serverName,
-        host: hostname,
-        port,
-        storage: getStorePath(),
-        mode: "human-vs-bot",
-      },
-      botStrategies: listBotStrategies(),
-      endpoints: [
-        "POST /auth/register",
-        "POST /auth/login",
-        "GET /auth/me",
-        "POST /auth/logout",
-        "GET /games",
-        "POST /games",
-        "GET /games/:gameId",
-        "POST /games/:gameId/round",
-        "POST /games/:gameId/exchange",
-        "GET /games/:gameId/export",
-        "GET /games-export",
-      ],
-    },
-  });
+main().catch((error) => {
+  logger.error(`Failed to start server: ${error.message || error}`);
+  process.exit(1);
 });
-
-app.get("/server/information", (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Server information.",
-    data: {
-      server: {
-        name: serverName,
-        host: hostname,
-        port,
-        storage: getStorePath(),
-        mode: "human-vs-bot",
-      },
-      auth: {
-        tokenType: "Bearer",
-      },
-      botStrategies: listBotStrategies(),
-    },
-  });
-});
-
-app.get("/logs", requireAuth, (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Logs loaded.",
-    data: matchStore,
-  });
-});
-
-app.post("/auth/register", (req, res) => {
-  const result = registerUser(req.body);
-  res.status(201).json({
-    status: true,
-    message: "User registered.",
-    data: result,
-  });
-});
-
-app.post("/auth/login", (req, res) => {
-  const result = loginUser(req.body);
-  res.status(200).json({
-    status: true,
-    message: "Login successful.",
-    data: result,
-  });
-});
-
-app.get("/auth/me", requireAuth, (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Authenticated user.",
-    data: req.auth,
-  });
-});
-
-app.post("/auth/logout", requireAuth, (req, res) => {
-  logoutToken(req.token);
-  res.status(200).json({
-    status: true,
-    message: "Logout successful.",
-    data: {},
-  });
-});
-
-app.get("/games", requireAuth, (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Games loaded.",
-    data: listGames(req.auth.user.id),
-  });
-});
-
-app.post("/games", requireAuth, (req, res) => {
-  res.status(201).json({
-    status: true,
-    message: "Game created.",
-    data: createGame(req.auth.user.id, req.body),
-  });
-});
-
-app.get("/games/:gameId", requireAuth, (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Game loaded.",
-    data: getGameState(req.params.gameId, req.auth.user.id),
-  });
-});
-
-app.post("/games/:gameId/round", requireAuth, (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Round resolved.",
-    data: playRound(req.params.gameId, req.auth.user.id, req.body),
-  });
-});
-
-app.post("/games/:gameId/exchange", requireAuth, (req, res) => {
-  res.status(200).json({
-    status: true,
-    message: "Tie exchange resolved.",
-    data: exchangeOnTie(req.params.gameId, req.auth.user.id, req.body),
-  });
-});
-
-app.get("/games/:gameId/export", requireAuth, (req, res) => {
-  const game = exportGame(req.params.gameId, req.auth.user.id);
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="game-${game.id}.json"`
-  );
-  res.status(200).json(game);
-});
-
-app.get("/games-export", requireAuth, (req, res) => {
-  const games = exportAllGames(req.auth.user.id);
-  const fileName = `games-${req.auth.user.username}.json`;
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-  res.status(200).json({
-    exportedAt: new Date().toISOString(),
-    user: req.auth.user,
-    games,
-  });
-});
-
-app.use((req, res) => {
-  res.status(404).json({
-    status: false,
-    message: "Route not found.",
-    data: {},
-  });
-});
-
-app.use((error, req, res, next) => {
-  if (error instanceof AuthError || error instanceof GameError) {
-    res.status(error.status).json({
-      status: false,
-      message: error.message,
-      data: {},
-    });
-    return;
-  }
-
-  logger.error(error?.stack ?? error?.message ?? String(error));
-  res.status(500).json({
-    status: false,
-    message: "Internal server error.",
-    data: {},
-  });
-});
-
-app.listen(port, hostname, () => {
-  logger.info(`Server is running at http://${hostname}:${port}`);
-});
-
-export default app;

@@ -1,17 +1,27 @@
 {
   "name": "478",
   "version": "0.0.1",
+  "description": "478 card game backend with admin panel and CLI",
   "module": "index.js",
   "type": "module",
+  "bin": {
+    "478": "./index.js"
+  },
   "scripts": {
     "dev": "bun --watch run index.js",
-    "start": "bun run index.js"
+    "start": "bun run index.js",
+    "config": "bun run index.js config",
+    "passwd": "bun run index.js passwd",
+    "install": "bun run index.js install",
+    "remove": "bun run index.js remove",
+    "status": "bun run index.js status"
   },
   "author": "shiftz300",
   "license": "MPL-2.0",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "ws": "^8.20.0"
   }
 }

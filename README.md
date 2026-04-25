@@ -1,20 +1,31 @@
 # 478
 
-Persistent human-vs-bot card-game backend with:
+Persistent card-game backend with:
 
 - user registration and login
 - bearer-token authentication
-- persistent users, sessions, and games in `data/store.json`
+- persistent users, sessions, and games in Bun SQLite `data/store.sqlite`
 - one-game export and full export
 - multiple bot algorithms
+- human-vs-bot and human-vs-human room play
 
-## Game Mode
+## Game Modes
+
+### Human vs Bot
 
 - Player `A` is the human.
 - Player `B` is the machine.
 - Every new game stores one bot strategy.
 - The human chooses only `cardA`.
 - The machine chooses `cardB` automatically from its strategy.
+
+### Human vs Human
+
+- Create a room first, then share a one-time 6-digit invite code.
+- After the second player joins, both players press start in the waiting room.
+- The room switches into a single running match.
+- During each round, both players lock in one card; the round resolves when both sides have submitted.
+- After settlement, both players can choose rematch; when both confirm, the next match starts immediately in the same room.
 
 ## Bot Strategies
 
@@ -51,198 +62,49 @@ bun install
 bun dev
 ```
 
+Or run the executable entry directly:
+
+```bash
+bun run index.js start
+```
+
+Available CLI commands:
+
+- `start`: start API and admin services
+- `config`: interactive config wizard
+- `passwd`: reset the level 0 super admin password
+- `install`: install a systemd service unit on Linux
+- `remove`: remove the systemd service unit
+- `status`: print current config and executable status
+- `help`: print command help
+
+Admin panel:
+
+- default URL: `http://localhost:47807`
+- allowed roles: level `0` and level `1`
+- features:
+  - admin login/logout
+  - user management
+  - application and match logs
+  - config editing for hostname, ports, description, token TTL and frontend origin whitelist
+
 Optional env vars:
 
 - `SERVER_HOSTNAME`
 - `SERVER_PORT`
 - `SERVER_NAME`
+- `SERVER_DESCRIPTION`
+- `ADMIN_PORT`
+- `ALLOWED_ORIGINS`
 - `AUTH_TOKEN_TTL_HOURS`
 
 Default storage file:
 
 ```text
-data/store.json
+data/store.sqlite
 ```
 
-## Auth API
+Runtime config is also stored in SQLite table `system_config`.
 
-### `POST /auth/register`
+On first startup, the backend will try to migrate legacy data from `data.db` and `data/store.json` into SQLite. If an old `data/config.json` exists and the database config table is empty, it will also be imported automatically.
 
-Request body:
-
-```json
-{
-  "username": "demo_user",
-  "password": "strong-password"
-}
-```
-
-Rules:
-
-- `username`: 3-32 chars, only letters, numbers, `_`, `-`
-- `password`: at least 8 chars
-
-### `POST /auth/login`
-
-Request body:
-
-```json
-{
-  "username": "demo_user",
-  "password": "strong-password"
-}
-```
-
-Response data:
-
-```json
-{
-  "token": "bearer-token",
-  "expiresAt": "2026-04-12T00:00:00.000Z",
-  "user": {
-    "id": "user-id",
-    "username": "demo_user",
-    "createdAt": "2026-04-12T00:00:00.000Z"
-  }
-}
-```
-
-### `GET /auth/me`
-
-Header:
-
-```text
-Authorization: Bearer <token>
-```
-
-### `POST /auth/logout`
-
-Header:
-
-```text
-Authorization: Bearer <token>
-```
-
-## Game API
-
-All game APIs below require:
-
-```text
-Authorization: Bearer <token>
-```
-
-### `GET /server/information`
-
-Returns server data plus `botStrategies`.
-
-### `GET /games`
-
-Get the current user's game list.
-
-Each game summary includes:
-
-- `mode`
-- `botStrategy`
-- `botStrategyName`
-
-### `POST /games`
-
-Create a new human-vs-bot game.
-
-Request body:
-
-```json
-{
-  "name": "ranked-1",
-  "botStrategy": "adaptive"
-}
-```
-
-`name` is optional.  
-`botStrategy` is optional and defaults to `random`.
-
-### `GET /games/:gameId`
-
-Get one full game state.
-
-Important fields in the response:
-
-- `mode`
-- `humanPlayerId`
-- `bot.playerId`
-- `bot.strategy`
-- `bot.strategyName`
-- `bot.strategyDescription`
-
-### `POST /games/:gameId/round`
-
-Resolve one human-vs-bot round.
-
-Request body:
-
-```json
-{
-  "cardA": "rock"
-}
-```
-
-Allowed values:
-
-- `scissors`
-- `rock`
-- `paper`
-
-The backend will choose `cardB` automatically.
-
-`round` response includes:
-
-- `cards.A`
-- `cards.B`
-- `botDecision.strategy`
-- `botDecision.reason`
-- `specialActions`
-
-### `POST /games/:gameId/exchange`
-
-Use the tie-exchange rule for the human side.
-
-Request body:
-
-```json
-{
-  "playerId": "A",
-  "card": "paper"
-}
-```
-
-Only player `A` can call this in human-vs-bot mode.
-
-### `GET /games/:gameId/export`
-
-Export one game as JSON download.
-
-### `GET /games-export`
-
-Export all current-user games as JSON download.
-
-## Response format
-
-Success:
-
-```json
-{
-  "status": true,
-  "message": "message",
-  "data": {}
-}
-```
-
-Error:
-
-```json
-{
-  "status": false,
-  "message": "error message",
-  "data": {}
-}
-```
