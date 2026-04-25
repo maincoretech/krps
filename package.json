@@ -12,8 +12,8 @@
     "start": "bun run index.js",
     "config": "bun run index.js config",
     "passwd": "bun run index.js passwd",
-    "install": "bun run index.js install",
-    "remove": "bun run index.js remove",
+    "install-service": "bun run index.js install",
+    "remove-service": "bun run index.js remove",
     "status": "bun run index.js status"
   },
   "author": "shiftz300",
