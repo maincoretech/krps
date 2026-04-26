@@ -1,6 +1,5 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
-import { staticPlugin } from "@elysiajs/static";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -20,6 +19,9 @@ import {
   logoutToken
 } from "./auth.js";
 import { getAdminConfig, getAdminLogs, getAdminOverview, saveAdminConfig, getRuntimeConfig } from "./system.js";
+import adminHtmlPath from "../public/admin/index.html" with { type: "file" };
+import adminJsPath from "../public/admin/app.js" with { type: "file" };
+import adminCssPath from "../public/admin/styles.css" with { type: "file" };
 import {
   createGame,
   createRoom,
@@ -47,12 +49,6 @@ import { getStorePath, getLeaderboard } from "./db.js";
 import logger from "./logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Resolve admin static directory path. In Bun compile mode, assets are mapped into /$bunfs/
-const isCompiled = process.isBun && import.meta.url.startsWith("file:///$bunfs");
-const adminStaticDir = isCompiled
-  ? "/$bunfs/public/admin"
-  : path.join(__dirname, "..", "public", "admin");
 
 const startedAt = Date.now();
 
@@ -282,10 +278,27 @@ export const adminApp = new Elysia()
       const url = new URL(request.url);
       if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
         set.status = 200;
-        return Bun.file(path.join(adminStaticDir, "index.html"));
+        set.headers["Content-Type"] = "text/html; charset=utf-8";
+        return Bun.file(adminHtmlPath);
       }
     }
     return errorHandler({ code, error, set });
+  })
+  .get("/", ({ set }) => {
+    set.headers["Content-Type"] = "text/html; charset=utf-8";
+    return Bun.file(adminHtmlPath);
+  })
+  .get("/index.html", ({ set }) => {
+    set.headers["Content-Type"] = "text/html; charset=utf-8";
+    return Bun.file(adminHtmlPath);
+  })
+  .get("/app.js", ({ set }) => {
+    set.headers["Content-Type"] = "application/javascript; charset=utf-8";
+    return Bun.file(adminJsPath);
+  })
+  .get("/styles.css", ({ set }) => {
+    set.headers["Content-Type"] = "text/css; charset=utf-8";
+    return Bun.file(adminCssPath);
   })
   .group("/api", app => app
     .group("/auth", app => app
@@ -337,5 +350,4 @@ export const adminApp = new Elysia()
         return sendOk(true);
       })
     )
-  )
-  .use(staticPlugin({ assets: adminStaticDir, prefix: "/" }));
+  );
