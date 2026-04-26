@@ -86,6 +86,9 @@ ExecStart=${getStartCommand()}
 Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${config.serviceName}
 
 [Install]
 WantedBy=multi-user.target

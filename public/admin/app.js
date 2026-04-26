@@ -196,7 +196,6 @@ async function saveConfig(event) {
     adminPort: Number(form.get("adminPort")),
     authTokenTtlHours: Number(form.get("authTokenTtlHours")),
     serviceName: form.get("serviceName"),
-    turnstileSecretKey: form.get("turnstileSecretKey"),
     allowedOrigins: String(form.get("allowedOrigins"))
       .split(/\r?\n|,/)
       .map((item) => item.trim())
@@ -529,10 +528,6 @@ function renderConfig() {
         <label>
           <span>systemd 服务名</span>
           <input name="serviceName" value="${config.serviceName}" ${state.me.role === 0 ? "" : "disabled"} />
-        </label>
-        <label class="full">
-          <span>Turnstile Secret Key</span>
-          <input name="turnstileSecretKey" value="${config.turnstileSecretKey || ''}" placeholder="1x0000000000000000000000000000000AA" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label class="full">
           <span>前端白名单</span>

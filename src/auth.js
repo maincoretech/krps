@@ -131,33 +131,9 @@ export async function initializeSysAdmin() {
   }
 }
 
-export async function verifyTurnstile(token) {
-  if (!token) return false;
-  const secret = getRuntimeConfig().turnstileSecretKey || "1x0000000000000000000000000000000AA";
-  try {
-    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: `secret=${encodeURIComponent(secret)}&response=${encodeURIComponent(token)}`,
-    });
-    const data = await response.json();
-    return data.success;
-  } catch (error) {
-    console.error("Turnstile verification error:", error);
-    return false;
-  }
-}
-
 export async function registerUser(payload) {
   const { username, password } = validateCredentials(payload);
   
-  const isValidCaptcha = await verifyTurnstile(payload.turnstileToken);
-  if (!isValidCaptcha) {
-    throw new AuthError(400, "Turnstile verification failed. Please complete the captcha.");
-  }
-
   await pruneExpiredSessions();
   const existing = findUserByUsername(username);
   if (existing) throw new AuthError(409, "Username already exists.");

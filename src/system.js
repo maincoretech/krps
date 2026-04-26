@@ -14,7 +14,6 @@ const defaultConfig = {
   allowedOrigins: ["http://localhost:5173", "http://localhost:4173", "http://localhost:47808"],
   authTokenTtlHours: 72,
   serviceName: "478d",
-  turnstileSecretKey: "1x0000000000000000000000000000000AA",
 };
 
 let cachedConfig = null;
@@ -61,7 +60,6 @@ function normalizeConfig(input = {}) {
       defaultConfig.authTokenTtlHours
     ),
     serviceName: normalizeName(config.serviceName, defaultConfig.serviceName),
-    turnstileSecretKey: String(config.turnstileSecretKey ?? defaultConfig.turnstileSecretKey).trim() || defaultConfig.turnstileSecretKey,
   };
 }
 
@@ -100,9 +98,6 @@ function buildConfigFromSources() {
     serviceName: getSystemConfigValue("serviceName")
       ? dbConfig.serviceName
       : process.env.SERVICE_NAME,
-    turnstileSecretKey: getSystemConfigValue("turnstileSecretKey")
-      ? dbConfig.turnstileSecretKey
-      : process.env.TURNSTILE_SECRET_KEY,
   });
 }
 
