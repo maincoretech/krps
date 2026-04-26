@@ -13,7 +13,7 @@ const defaultConfig = {
   adminPort: 47807,
   allowedOrigins: ["http://localhost:5173", "http://localhost:4173", "http://localhost:47808"],
   authTokenTtlHours: 72,
-  serviceName: "478",
+  serviceName: "478d",
   turnstileSecretKey: "1x0000000000000000000000000000000AA",
 };
 
