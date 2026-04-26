@@ -78,15 +78,16 @@ export async function broadcastRoomState(roomId, result) {
   }
 }
 
-function getBearerToken(reqOrString) {
-  if (typeof reqOrString === "string") {
-    const value = reqOrString.trim();
+function getBearerToken(headersOrString) {
+  if (!headersOrString) return null;
+  if (typeof headersOrString === "string") {
+    const value = headersOrString.trim();
     if (!value) return null;
     if (!value.includes(" ")) return value;
     const [scheme, token] = value.split(" ");
     return scheme === "Bearer" && token ? token : null;
   }
-  const header = reqOrString?.headers?.authorization ?? "";
+  const header = headersOrString.authorization ?? "";
   const [scheme, token] = header.split(" ");
   return scheme === "Bearer" && token ? token : null;
 }

@@ -83,7 +83,10 @@ async function bootstrap() {
     localStorage.removeItem(tokenKey);
     state.token = "";
     state.me = null;
-    setMessage(error.message);
+    // Do not show auth-related error messages on the login screen
+    if (!error.message.toLowerCase().includes("bearer") && !error.message.toLowerCase().includes("token")) {
+      setMessage(error.message);
+    }
   }
   render();
 }
