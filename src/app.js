@@ -118,7 +118,7 @@ export const app = new Elysia()
     logger.info(`${request.method} ${new URL(request.url).pathname}`);
   })
   .onError(errorHandler)
-  .ws("/ws", {
+  .ws("/", {
     open(ws) {
       global.wsClients.add(ws);
     },
