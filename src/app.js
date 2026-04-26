@@ -47,7 +47,13 @@ import { getStorePath, getLeaderboard } from "./db.js";
 import logger from "./logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const adminStaticDir = path.join(__dirname, "..", "public", "admin");
+
+// Resolve admin static directory path. In Bun compile mode, assets are mapped into /$bunfs/
+const isCompiled = process.isBun && import.meta.url.startsWith("file:///$bunfs");
+const adminStaticDir = isCompiled
+  ? "/$bunfs/public/admin"
+  : path.join(__dirname, "..", "public", "admin");
+
 const startedAt = Date.now();
 
 global.wsClients = new Set();
