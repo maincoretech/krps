@@ -14,9 +14,9 @@ const state = {
 };
 
 function roleName(role) {
-  if (role === 0) return "超级管理员";
-  if (role === 1) return "管理员";
-  return "普通用户";
+  if (role === 0) return "Super Admin";
+  if (role === 1) return "Admin";
+  return "User";
 }
 
 function setMessage(text) {
@@ -131,7 +131,8 @@ async function loadLogs() {
 
 async function submitCreateUser(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   await request("/api/users", {
     method: "POST",
     body: JSON.stringify({
@@ -140,52 +141,118 @@ async function submitCreateUser(event) {
       role: Number(form.get("role")),
     }),
   });
-  event.currentTarget.reset();
+  
   await loadUsers();
-  setMessage("用户已创建。");
+  setMessage("User created successfully.");
+  if (formElement && typeof formElement.reset === 'function') {
+    formElement.reset();
+  }
 }
 
 async function editUser(userId) {
   const user = state.users.find((item) => item.id === userId);
   if (!user) return;
 
-  const username = window.prompt("输入新的用户名，留空保持不变：", user.username) ?? "";
-  const password = window.prompt("输入新密码，留空保持不变：", "") ?? "";
-  let role = user.role;
-  if (state.me.role === 0) {
-    const roleInput = window.prompt("输入角色：0=超级管理员，1=管理员，2=普通用户", String(user.role));
-    if (roleInput != null && roleInput.trim() !== "") {
-      role = Number(roleInput);
+  const result = await new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    
+    let roleSelectHtml = "";
+    if (state.me.role === 0) {
+      roleSelectHtml = `
+        <label>
+          <span>Role</span>
+          <select name="role">
+            <option value="0" ${user.role === 0 ? "selected" : ""}>Super Admin</option>
+            <option value="1" ${user.role === 1 ? "selected" : ""}>Admin</option>
+            <option value="2" ${user.role === 2 ? "selected" : ""}>User</option>
+          </select>
+        </label>
+      `;
     }
-  }
+
+    overlay.innerHTML = `
+      <form class="modal-content" id="edit-user-dialog-form">
+        <h3>Edit User</h3>
+        <p>Updating details for <strong>${user.username}</strong>.</p>
+        <div class="field-grid" style="margin: 0;">
+          <label>
+            <span>Username (Leave empty to keep unchanged)</span>
+            <input name="username" value="${user.username}" placeholder="New Username" />
+          </label>
+          <label>
+            <span>Password (Leave empty to keep unchanged)</span>
+            <input name="password" type="password" placeholder="New Password" />
+          </label>
+          ${roleSelectHtml}
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="edit-user-cancel">Cancel</button>
+          <button type="submit" class="btn">Save Changes</button>
+        </div>
+      </form>
+    `;
+    
+    document.body.appendChild(overlay);
+
+    const form = overlay.querySelector("#edit-user-dialog-form");
+    const cancelBtn = overlay.querySelector("#edit-user-cancel");
+
+    const cleanup = () => {
+      document.body.removeChild(overlay);
+    };
+
+    cancelBtn.addEventListener("click", () => {
+      cleanup();
+      resolve(null);
+    });
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const data = {
+        username: fd.get("username"),
+        password: fd.get("password"),
+      };
+      if (state.me.role === 0) {
+        data.role = Number(fd.get("role"));
+      }
+      cleanup();
+      resolve(data);
+    });
+  });
+
+  if (!result) return; // User cancelled
+
+  const { username, password, role } = result;
 
   await request(`/api/users/${userId}`, {
     method: "PATCH",
     body: JSON.stringify({
       username: username.trim() === user.username ? undefined : username.trim(),
       password: password.trim() || undefined,
-      role,
+      role: role !== undefined ? role : user.role,
     }),
   });
   await loadUsers();
-  setMessage("用户信息已更新。");
+  setMessage("User information updated.");
 }
 
 async function resetPassword(userId) {
   const result = await request(`/api/users/${userId}/reset-password`, { method: "POST" });
-  window.alert(`用户 ${result.user.username} 的新密码是：${result.password}`);
-  setMessage("密码已重置。");
+  window.alert(`The new password for user ${result.user.username} is: ${result.password}`);
+  setMessage("Password has been reset.");
 }
 
 async function deleteUser(userId) {
   const user = state.users.find((item) => item.id === userId);
   if (!user) return;
-  if (!window.confirm(`确认删除用户 ${user.username} 吗？其游戏和房间数据也会被删除。`)) {
+  if (!window.confirm(`Are you sure you want to delete user ${user.username}? Their game and room data will also be deleted.`)) {
     return;
   }
   await request(`/api/users/${userId}`, { method: "DELETE" });
   await loadUsers();
-  setMessage("用户已删除。");
+  setMessage("User has been deleted.");
 }
 
 async function saveConfig(event) {
@@ -209,7 +276,20 @@ async function saveConfig(event) {
     body: JSON.stringify(payload),
   });
   state.config = result.config;
-  setMessage(result.requiresRestart ? "配置已保存，端口或监听地址变化需要重启服务。" : "配置已保存。");
+  setMessage(result.requiresRestart ? "Configuration saved. Restart required for port or host changes to take effect." : "Configuration saved.");
+}
+
+function downloadJson(filename, obj) {
+  const str = JSON.stringify(obj, null, 2);
+  const blob = new Blob([str], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function bindEvents() {
@@ -297,27 +377,65 @@ function bindEvents() {
       setMessage(error.message);
     }
   });
+
+  document.querySelector("#export-config-btn")?.addEventListener("click", async () => {
+    try {
+      const data = await request("/api/backup/config");
+      downloadJson("478-config-backup.json", data);
+    } catch (err) { setMessage(err.message); }
+  });
+
+  document.querySelector("#export-users-btn")?.addEventListener("click", async () => {
+    try {
+      const data = await request("/api/backup/users");
+      downloadJson("478-users-backup.json", data);
+    } catch (err) { setMessage(err.message); }
+  });
+
+  document.querySelector("#import-config-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const file = e.currentTarget.querySelector('input[type="file"]').files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      await request("/api/backup/config", { method: "POST", body: JSON.stringify(json) });
+      setMessage("Configuration imported successfully.");
+    } catch (err) { setMessage("Import failed: " + err.message); }
+  });
+
+  document.querySelector("#import-users-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const file = e.currentTarget.querySelector('input[type="file"]').files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await request("/api/backup/users", { method: "POST", body: JSON.stringify(json) });
+      setMessage(`Imported ${res.imported} users successfully.`);
+    } catch (err) { setMessage("Import failed: " + err.message); }
+  });
 }
 
 function renderLogin() {
   app.innerHTML = `
     <div class="page login-shell">
       <form id="login-form" class="login-card">
-        <h1>478 管理后台</h1>
-        <p class="muted">仅允许 0 级和 1 级管理员登录。</p>
+        <h1>478 Admin</h1>
+        <p class="muted">Access restricted to Super Admin (Level 0) and Admin (Level 1).</p>
         ${state.message ? `<div class="message">${state.message}</div>` : ""}
         <div class="field-grid">
           <label>
-            <span>用户名</span>
+            <span>Username</span>
             <input name="username" autocomplete="username" required />
           </label>
           <label>
-            <span>密码</span>
+            <span>Password</span>
             <input name="password" type="password" autocomplete="current-password" required />
           </label>
         </div>
         <div class="btn-row">
-          <button class="btn" type="submit">登录</button>
+          <button class="btn" type="submit">Login</button>
         </div>
       </form>
     </div>
@@ -328,26 +446,26 @@ function renderLogin() {
 function renderOverview() {
   const overview = state.overview;
   if (!overview) {
-    return `<div class="panel-card">加载中...</div>`;
+    return `<div class="panel-card">Loading...</div>`;
   }
   const stats = [
-    ["用户总数", overview.counts.users],
-    ["超级管理员", overview.counts.superAdmins],
-    ["管理员", overview.counts.admins],
-    ["普通用户", overview.counts.normalUsers],
-    ["在线会话", overview.counts.sessions],
-    ["游戏局", overview.counts.games],
-    ["房间", overview.counts.rooms],
-    ["应用日志", overview.counts.appLogs],
+    ["Total Users", overview.counts.users],
+    ["Super Admins", overview.counts.superAdmins],
+    ["Admins", overview.counts.admins],
+    ["Normal Users", overview.counts.normalUsers],
+    ["Active Sessions", overview.counts.sessions],
+    ["Total Games", overview.counts.games],
+    ["Total Rooms", overview.counts.rooms],
+    ["App Logs", overview.counts.appLogs],
   ];
   return `
     <div class="content-head">
       <div>
-        <h2>系统概览</h2>
+        <h2>System Overview</h2>
         <div class="muted">${overview.service.name}</div>
       </div>
       <div class="actions">
-        <button class="btn secondary" id="reload-overview">刷新</button>
+        <button class="btn secondary" id="reload-overview">Refresh</button>
       </div>
     </div>
     <div class="cards">
@@ -364,11 +482,11 @@ function renderOverview() {
     </div>
     <div class="panel-card">
       <div class="field-grid">
-        <div><strong>描述</strong><div class="muted">${overview.service.description || "未设置"}</div></div>
-        <div><strong>API 地址</strong><div class="muted">${overview.service.hostname}:${overview.service.apiPort}</div></div>
-        <div><strong>管理页地址</strong><div class="muted">${overview.service.hostname}:${overview.service.adminPort}</div></div>
-        <div><strong>配置存储</strong><div class="muted">${overview.service.configStorage.type} / ${overview.service.configStorage.table}</div></div>
-        <div><strong>数据文件</strong><div class="muted">${overview.service.storePath}</div></div>
+        <div><strong>Description</strong><div class="muted">${overview.service.description || "Not Set"}</div></div>
+        <div><strong>API Address</strong><div class="muted">${overview.service.hostname}:${overview.service.apiPort}</div></div>
+        <div><strong>Admin Address</strong><div class="muted">${overview.service.hostname}:${overview.service.adminPort}</div></div>
+        <div><strong>Config Storage</strong><div class="muted">${overview.service.configStorage.type} / ${overview.service.configStorage.table}</div></div>
+        <div><strong>Data File</strong><div class="muted">${overview.service.storePath}</div></div>
       </div>
     </div>
   `;
@@ -378,44 +496,44 @@ function renderUsers() {
   return `
     <div class="content-head">
       <div>
-        <h2>用户管理</h2>
-        <div class="muted">支持创建、编辑、删号和密码重置。</div>
+        <h2>User Management</h2>
+        <div class="muted">Create, edit, delete users and reset passwords.</div>
       </div>
       <div class="actions">
-        <button class="btn secondary" id="users-refresh">刷新</button>
+        <button class="btn secondary" id="users-refresh">Refresh</button>
       </div>
     </div>
     <div class="panel-card">
       <form id="user-filter-form" class="toolbar">
-        <input name="user-search" placeholder="搜索用户名" />
+        <input name="user-search" placeholder="Search Username" />
         <select name="user-role-filter">
-          <option value="">全部角色</option>
-          <option value="0">超级管理员</option>
-          <option value="1">管理员</option>
-          <option value="2">普通用户</option>
+          <option value="">All Roles</option>
+          <option value="0">Super Admin</option>
+          <option value="1">Admin</option>
+          <option value="2">User</option>
         </select>
-        <button class="btn secondary" type="submit">筛选</button>
+        <button class="btn secondary" type="submit">Filter</button>
       </form>
     </div>
     <div class="panel-card">
       <form id="create-user-form" class="toolbar">
-        <input name="username" placeholder="新用户名" required />
-        <input name="password" type="password" placeholder="初始密码" required />
+        <input name="username" placeholder="New Username" required />
+        <input name="password" type="password" placeholder="Initial Password" required />
         <select name="role">
-          ${state.me.role === 0 ? '<option value="1">管理员</option>' : ""}
-          <option value="2" selected>普通用户</option>
+          ${state.me.role === 0 ? '<option value="1">Admin</option>' : ""}
+          <option value="2" selected>User</option>
         </select>
-        <button class="btn" type="submit">创建用户</button>
+        <button class="btn" type="submit">Create User</button>
       </form>
     </div>
     <div class="panel-card table-wrap">
       <table>
         <thead>
           <tr>
-            <th>用户名</th>
-            <th>角色</th>
-            <th>创建时间</th>
-            <th>操作</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Created At</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -423,13 +541,13 @@ function renderUsers() {
             .map(
               (user) => `
                 <tr>
-                  <td>${user.username}${state.me.id === user.id ? " (我)" : ""}</td>
+                  <td>${user.username}${state.me.id === user.id ? " (Me)" : ""}</td>
                   <td><span class="badge role-${user.role}">${roleName(user.role)}</span></td>
                   <td>${user.createdAt}</td>
                   <td class="actions">
-                    <button class="btn secondary" type="button" data-edit-user="${user.id}">编辑</button>
-                    <button class="btn secondary" type="button" data-reset-password="${user.id}">重置密码</button>
-                    <button class="btn warn" type="button" data-delete-user="${user.id}">删除</button>
+                    <button class="btn secondary" type="button" data-edit-user="${user.id}">Edit</button>
+                    <button class="btn secondary" type="button" data-reset-password="${user.id}">Reset Password</button>
+                    <button class="btn warn" type="button" data-delete-user="${user.id}">Delete</button>
                   </td>
                 </tr>
               `
@@ -445,30 +563,30 @@ function renderLogs() {
   return `
     <div class="content-head">
       <div>
-        <h2>日志</h2>
-        <div class="muted">查看应用日志和对局日志。</div>
+        <h2>Logs</h2>
+        <div class="muted">View application and match logs.</div>
       </div>
       <div class="actions">
-        <button class="btn secondary ${state.logsScope === "app" ? "active" : ""}" type="button" data-log-scope="app">应用日志</button>
-        <button class="btn secondary ${state.logsScope === "match" ? "active" : ""}" type="button" data-log-scope="match">对局日志</button>
+        <button class="btn secondary ${state.logsScope === "app" ? "active" : ""}" type="button" data-log-scope="app">App Logs</button>
+        <button class="btn secondary ${state.logsScope === "match" ? "active" : ""}" type="button" data-log-scope="match">Match Logs</button>
       </div>
     </div>
     <div class="panel-card">
       <form id="logs-filter-form" class="toolbar">
-        <input name="log-search" placeholder="搜索日志内容" />
+        <input name="log-search" placeholder="Search Logs" />
         <select name="log-level">
-          <option value="">全部级别</option>
+          <option value="">All Levels</option>
           <option value="info">info</option>
           <option value="warn">warn</option>
           <option value="error">error</option>
           <option value="match">match</option>
         </select>
         <select name="log-limit">
-          <option value="100">最近 100 条</option>
-          <option value="200" selected>最近 200 条</option>
-          <option value="500">最近 500 条</option>
+          <option value="100">Last 100</option>
+          <option value="200" selected>Last 200</option>
+          <option value="500">Last 500</option>
         </select>
-        <button class="btn secondary" type="submit">刷新</button>
+        <button class="btn secondary" type="submit">Refresh</button>
       </form>
     </div>
     <div class="panel-card log-list">
@@ -484,7 +602,7 @@ function renderLogs() {
             </div>
           `
         )
-        .join("") || '<div class="muted">暂无日志。</div>'}
+        .join("") || '<div class="muted">No logs found.</div>'}
     </div>
   `;
 }
@@ -492,61 +610,115 @@ function renderLogs() {
 function renderConfig() {
   const config = state.config;
   if (!config) {
-    return `<div class="panel-card">加载中...</div>`;
+    return `<div class="panel-card">Loading...</div>`;
   }
   return `
     <div class="content-head">
       <div>
-        <h2>配置</h2>
-        <div class="muted">管理服务监听、描述、白名单和会话策略。</div>
+        <h2>Configuration</h2>
+        <div class="muted">Manage server listeners, descriptions, allowed origins, and session policies.</div>
       </div>
     </div>
-    ${state.me.role === 0 ? '<div class="notice">保存端口或监听地址后需要重启服务才能生效。</div>' : '<div class="notice">当前为管理员，只可查看配置。</div>'}
+    ${state.me.role === 0 ? '<div class="notice">Changes to ports or listeners require a service restart to take effect.</div>' : '<div class="notice">You are an Admin. You can only view configuration.</div>'}
     <form id="config-form" class="panel-card">
       <div class="config-grid">
         <label>
-          <span>服务名</span>
+          <span>Server Name</span>
           <input name="serverName" value="${config.serverName}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label>
-          <span>描述</span>
+          <span>Description</span>
           <input name="serverDescription" value="${config.serverDescription || ""}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label>
-          <span>监听地址</span>
+          <span>Host</span>
           <input name="hostname" value="${config.hostname}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label>
-          <span>API 端口</span>
+          <span>API Port</span>
           <input name="serverPort" type="number" value="${config.serverPort}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label>
-          <span>管理页端口</span>
+          <span>Admin Port</span>
           <input name="adminPort" type="number" value="${config.adminPort}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label>
-          <span>Token TTL 小时</span>
+          <span>Token TTL (Hours)</span>
           <input name="authTokenTtlHours" type="number" value="${config.authTokenTtlHours}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label>
-          <span>systemd 服务名</span>
+          <span>systemd Service Name</span>
           <input name="serviceName" value="${config.serviceName}" ${state.me.role === 0 ? "" : "disabled"} />
         </label>
         <label class="full">
-          <span>前端白名单</span>
+          <span>Allowed Origins</span>
           <textarea name="allowedOrigins" rows="6" ${state.me.role === 0 ? "" : "disabled"}>${config.allowedOrigins.join("\n")}</textarea>
         </label>
         <label class="full">
-          <span>配置存储位置</span>
+          <span>Config Storage</span>
           <input value="${config.configStorage.storePath} -> ${config.configStorage.table}" disabled />
         </label>
       </div>
       ${
         state.me.role === 0
-          ? '<div class="btn-row"><button class="btn" type="submit">保存配置</button></div>'
+          ? '<div class="btn-row" style="margin-top: 24px;"><button class="btn" type="submit">Save Configuration</button></div>'
           : ""
       }
     </form>
+  `;
+}
+
+function renderBackup() {
+  return `
+    <div class="content-head">
+      <div>
+        <h2>Backup & Restore</h2>
+        <div class="muted">Export and import configuration and user data.</div>
+      </div>
+    </div>
+    ${state.me.role === 0 ? '' : '<div class="notice">You are an Admin. You can only export, not import.</div>'}
+    
+    <div class="cards" style="margin-bottom: 24px;">
+      <div class="panel-card" style="flex: 1; display: flex; flex-direction: column;">
+        <h3>Configuration</h3>
+        <p class="muted" style="flex: 1;">Export current system configuration to a JSON file, or import to apply.</p>
+        <div class="btn-row" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn" id="export-config-btn">Export Config</button>
+          ${state.me.role === 0 ? `
+            <form id="import-config-form" style="display: flex; gap: 12px; align-items: center; margin: 0;">
+              <label class="btn secondary" style="cursor: pointer; margin: 0;">
+                Select File
+                <input type="file" accept=".json" required style="display: none;" onchange="this.parentElement.nextElementSibling.style.display='block'; this.parentElement.nextElementSibling.querySelector('.file-name').textContent=this.files[0].name;" />
+              </label>
+              <div style="display: none; align-items: center; gap: 8px;">
+                <span class="file-name muted" style="font-size: 13px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+                <button class="btn" type="submit">Import</button>
+              </div>
+            </form>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="panel-card" style="flex: 1; display: flex; flex-direction: column;">
+        <h3>Users Data</h3>
+        <p class="muted" style="flex: 1;">Export all users (including hashed passwords) to a JSON file, or import to upsert.</p>
+        <div class="btn-row" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn warn" id="export-users-btn">Export Users</button>
+          ${state.me.role === 0 ? `
+            <form id="import-users-form" style="display: flex; gap: 12px; align-items: center; margin: 0;">
+              <label class="btn secondary" style="cursor: pointer; margin: 0;">
+                Select File
+                <input type="file" accept=".json" required style="display: none;" onchange="this.parentElement.nextElementSibling.style.display='block'; this.parentElement.nextElementSibling.querySelector('.file-name').textContent=this.files[0].name;" />
+              </label>
+              <div style="display: none; align-items: center; gap: 8px;">
+                <span class="file-name muted" style="font-size: 13px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+                <button class="btn" type="submit">Import</button>
+              </div>
+            </form>
+          ` : ''}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -556,6 +728,7 @@ function renderShell() {
     users: renderUsers(),
     logs: renderLogs(),
     config: renderConfig(),
+    backup: renderBackup(),
   };
 
   app.innerHTML = `
@@ -566,13 +739,14 @@ function renderShell() {
           <div class="muted">${state.me.username} / ${roleName(state.me.role)}</div>
         </div>
         <nav class="nav">
-          <button class="nav-btn ${state.activeView === "overview" ? "active" : ""}" data-view="overview">概览</button>
-          <button class="nav-btn ${state.activeView === "users" ? "active" : ""}" data-view="users">用户管理</button>
-          <button class="nav-btn ${state.activeView === "logs" ? "active" : ""}" data-view="logs">日志</button>
-          <button class="nav-btn ${state.activeView === "config" ? "active" : ""}" data-view="config">配置</button>
+          <button class="nav-btn ${state.activeView === "overview" ? "active" : ""}" data-view="overview">Overview</button>
+          <button class="nav-btn ${state.activeView === "users" ? "active" : ""}" data-view="users">Users</button>
+          <button class="nav-btn ${state.activeView === "logs" ? "active" : ""}" data-view="logs">Logs</button>
+          <button class="nav-btn ${state.activeView === "config" ? "active" : ""}" data-view="config">Config</button>
+          <button class="nav-btn ${state.activeView === "backup" ? "active" : ""}" data-view="backup">Backup</button>
         </nav>
         <div class="actions">
-          <button class="btn secondary" id="logout-btn">退出登录</button>
+          <button class="btn secondary" id="logout-btn">Logout</button>
         </div>
       </aside>
       <main class="main">

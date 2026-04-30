@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import "dotenv/config";
 import { runCli } from "./src/cli.js";
 import { getRuntimeConfig } from "./src/system.js";
 import { initializeSysAdmin } from "./src/auth.js";

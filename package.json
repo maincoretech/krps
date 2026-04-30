@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "bun --watch run index.js",
     "start": "bun run index.js",
+    "test": "bun test",
+    "benchmark": "bun run benchmark.js",
     "config": "bun run index.js config",
     "passwd": "bun run index.js passwd",
     "install-service": "bun run index.js install",
@@ -21,7 +23,6 @@
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/static": "^1.4.10",
-    "dotenv": "^16.4.5",
     "elysia": "^1.4.28"
   }
 }

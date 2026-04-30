@@ -238,7 +238,7 @@ export async function createManagedUser(actorId, payload) {
 
   const { username, password } = validateCredentials(payload);
   const role = Number(payload?.role ?? 2);
-  if (![1, 2].includes(role) || (role === 1 && actor.role !== 0)) {
+  if (![0, 1, 2].includes(role) || (role <= 1 && actor.role !== 0)) {
     throw new AuthError(403, "Forbidden role assignment.");
   }
 

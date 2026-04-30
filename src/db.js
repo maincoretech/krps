@@ -46,39 +46,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 
-  CREATE TABLE IF NOT EXISTS games (
+  CREATE TABLE IF NOT EXISTS matches (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL,
-    name TEXT NOT NULL,
     mode TEXT NOT NULL,
-    bot_strategy TEXT NOT NULL,
     status TEXT NOT NULL,
-    winner TEXT,
-    round_count INTEGER NOT NULL DEFAULT 0,
-    tie_count INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    payload TEXT NOT NULL,
+    data TEXT NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
-  CREATE INDEX IF NOT EXISTS idx_games_owner_updated ON games(owner_id, updated_at DESC);
-
-  CREATE TABLE IF NOT EXISTS rooms (
-    id TEXT PRIMARY KEY,
-    host_id TEXT NOT NULL,
-    guest_id TEXT,
-    invite_code TEXT UNIQUE,
-    status TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    payload TEXT NOT NULL,
-    FOREIGN KEY (host_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (guest_id) REFERENCES users(id) ON DELETE SET NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_rooms_host_updated ON rooms(host_id, updated_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_rooms_guest_updated ON rooms(guest_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_matches_owner_id ON matches(owner_id);
+  CREATE INDEX IF NOT EXISTS idx_matches_updated_at ON matches(updated_at);
 
   CREATE TABLE IF NOT EXISTS system_config (
     key TEXT PRIMARY KEY,
@@ -109,50 +88,22 @@ function mapSessionRow(row) {
   };
 }
 
-function mapGameRow(row) {
+function mapMatchRow(row) {
   if (!row) return null;
 
-  let payload = {};
+  let data = {};
   try {
-    payload = JSON.parse(row.payload);
+    data = JSON.parse(row.data);
   } catch {
-    payload = {};
+    data = {};
   }
 
   return {
-    ...payload,
+    ...data,
     id: row.id,
     ownerId: row.owner_id,
-    name: row.name,
     mode: row.mode,
-    botStrategy: row.bot_strategy,
     status: row.status,
-    winner: row.winner,
-    roundCount: row.round_count,
-    tieCount: row.tie_count,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapRoomRow(row) {
-  if (!row) return null;
-
-  let payload = {};
-  try {
-    payload = JSON.parse(row.payload);
-  } catch {
-    payload = {};
-  }
-
-  return {
-    ...payload,
-    id: row.id,
-    hostUserId: row.host_id,
-    guestUserId: row.guest_id,
-    inviteCode: row.invite_code,
-    status: row.status,
-    createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
@@ -162,8 +113,9 @@ const countUsersByRoleStmt = db.query(
 );
 const countUsersStmt = db.query("SELECT COUNT(*) AS count FROM users");
 const countSessionsStmt = db.query("SELECT COUNT(*) AS count FROM sessions");
-const countGamesStmt = db.query("SELECT COUNT(*) AS count FROM games");
-const countRoomsStmt = db.query("SELECT COUNT(*) AS count FROM rooms");
+const countMatchesStmt = db.query("SELECT COUNT(*) AS count FROM matches");
+const countGamesStmt = db.query("SELECT COUNT(*) AS count FROM matches WHERE mode = 'human-vs-bot'");
+const countRoomsStmt = db.query("SELECT COUNT(*) AS count FROM matches WHERE mode = 'human-vs-human'");
 const findUserByIdStmt = db.query(
   "SELECT * FROM users WHERE id = ? LIMIT 1"
 );
@@ -188,6 +140,16 @@ const updateUserStmt = db.query(`
   SET username = ?, username_lower = ?, password_hash = ?, role = ?, created_at = ?
   WHERE id = ?
 `);
+const upsertUserStmt = db.query(`
+  INSERT INTO users (id, username, username_lower, password_hash, role, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    username = excluded.username,
+    username_lower = excluded.username_lower,
+    password_hash = excluded.password_hash,
+    role = excluded.role,
+    created_at = excluded.created_at
+`);
 const deleteExpiredSessionsStmt = db.query(
   "DELETE FROM sessions WHERE expires_at < ?"
 );
@@ -208,48 +170,34 @@ const deleteUserStmt = db.query(
   "DELETE FROM users WHERE id = ?"
 );
 
-const insertGameStmt = db.query(`
-  INSERT INTO games (
-    id, owner_id, name, mode, bot_strategy, status, winner,
-    round_count, tie_count, created_at, updated_at, payload
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+const insertMatchStmt = db.query(`
+  INSERT INTO matches (
+    id, owner_id, mode, status, updated_at, data
+  ) VALUES (?, ?, ?, ?, ?, ?)
 `);
-const updateGameStmt = db.query(`
-  UPDATE games
-  SET owner_id = ?, name = ?, mode = ?, bot_strategy = ?, status = ?, winner = ?,
-      round_count = ?, tie_count = ?, created_at = ?, updated_at = ?, payload = ?
+const updateMatchStmt = db.query(`
+  UPDATE matches
+  SET owner_id = ?, mode = ?, status = ?, updated_at = ?, data = ?
   WHERE id = ?
 `);
-const findGameByIdStmt = db.query(
-  "SELECT * FROM games WHERE id = ? LIMIT 1"
+const findMatchByIdStmt = db.query(
+  "SELECT * FROM matches WHERE id = ? LIMIT 1"
 );
-const listGamesByOwnerStmt = db.query(
-  "SELECT * FROM games WHERE owner_id = ? ORDER BY updated_at DESC"
+const listMatchesByOwnerStmt = db.query(
+  "SELECT * FROM matches WHERE owner_id = ? ORDER BY updated_at DESC"
 );
-const insertRoomStmt = db.query(`
-  INSERT INTO rooms (id, host_id, guest_id, invite_code, status, created_at, updated_at, payload)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`);
-const updateRoomStmt = db.query(`
-  UPDATE rooms
-  SET host_id = ?, guest_id = ?, invite_code = ?, status = ?, created_at = ?, updated_at = ?, payload = ?
-  WHERE id = ?
-`);
-const findRoomByIdStmt = db.query(
-  "SELECT * FROM rooms WHERE id = ? LIMIT 1"
+const findMatchByInviteCodeStmt = db.query(
+  "SELECT * FROM matches WHERE json_extract(data, '$.inviteCode') = ? LIMIT 1"
 );
-const findRoomByInviteCodeStmt = db.query(
-  "SELECT * FROM rooms WHERE invite_code = ? LIMIT 1"
-);
-const listVisibleRoomsStmt = db.query(`
-  SELECT * FROM rooms 
-  WHERE host_id = ? 
-     OR guest_id = ? 
-     OR (status = 'waiting' AND guest_id IS NULL AND COALESCE(json_extract(payload, '$.isPublic'), true) = 1)
+const listVisibleMatchesStmt = db.query(`
+  SELECT * FROM matches 
+  WHERE owner_id = ? 
+     OR json_extract(data, '$.guestUserId') = ? 
+     OR (status = 'waiting' AND json_extract(data, '$.guestUserId') IS NULL AND COALESCE(json_extract(data, '$.isPublic'), true) = 1)
   ORDER BY updated_at DESC
 `);
-const deleteRoomStmt = db.query(
-  "DELETE FROM rooms WHERE id = ?"
+const deleteMatchStmt = db.query(
+  "DELETE FROM matches WHERE id = ?"
 );
 const getSystemConfigValueStmt = db.query(
   "SELECT value FROM system_config WHERE key = ? LIMIT 1"
@@ -331,6 +279,17 @@ export function updateUser(user) {
   );
 }
 
+export function upsertUser(user) {
+  upsertUserStmt.run(
+    user.id,
+    user.username,
+    user.username.toLowerCase(),
+    user.passwordHash,
+    user.role,
+    user.createdAt
+  );
+}
+
 export function deleteSessionsByUserId(userId) {
   return Number(deleteSessionsByUserIdStmt.run(userId).changes ?? 0);
 }
@@ -361,96 +320,46 @@ export function deleteSessionsByTokenHash(tokenHash) {
   return Number(deleteSessionsByTokenHashStmt.run(tokenHash).changes ?? 0);
 }
 
-function serializeGamePayload(game) {
-  return JSON.stringify(game);
-}
-
-export function insertGame(game) {
-  insertGameStmt.run(
-    game.id,
-    game.ownerId,
-    game.name,
-    game.mode,
-    game.botStrategy,
-    game.status,
-    game.winner,
-    game.roundCount,
-    game.tieCount,
-    game.createdAt,
-    game.updatedAt,
-    serializeGamePayload(game)
+export function insertMatch(match) {
+  insertMatchStmt.run(
+    match.id,
+    match.ownerId || match.hostUserId,
+    match.mode,
+    match.status,
+    match.updatedAt,
+    JSON.stringify(match)
   );
 }
 
-export function updateGame(game) {
-  updateGameStmt.run(
-    game.ownerId,
-    game.name,
-    game.mode,
-    game.botStrategy,
-    game.status,
-    game.winner,
-    game.roundCount,
-    game.tieCount,
-    game.createdAt,
-    game.updatedAt,
-    serializeGamePayload(game),
-    game.id
+export function updateMatch(match) {
+  updateMatchStmt.run(
+    match.ownerId || match.hostUserId,
+    match.mode,
+    match.status,
+    match.updatedAt,
+    JSON.stringify(match),
+    match.id
   );
 }
 
-export function findGameById(gameId) {
-  return mapGameRow(findGameByIdStmt.get(gameId));
+export function findMatchById(matchId) {
+  return mapMatchRow(findMatchByIdStmt.get(matchId));
 }
 
-export function listGamesByOwner(ownerId) {
-  return listGamesByOwnerStmt.all(ownerId).map(mapGameRow);
+export function listMatchesByOwner(ownerId) {
+  return listMatchesByOwnerStmt.all(ownerId).map(mapMatchRow);
 }
 
-function serializeRoomPayload(room) {
-  return JSON.stringify(room);
+export function findMatchByInviteCode(inviteCode) {
+  return mapMatchRow(findMatchByInviteCodeStmt.get(inviteCode));
 }
 
-export function insertRoom(room) {
-  insertRoomStmt.run(
-    room.id,
-    room.hostUserId,
-    room.guestUserId ?? null,
-    room.inviteCode ?? null,
-    room.status,
-    room.createdAt,
-    room.updatedAt,
-    serializeRoomPayload(room)
-  );
+export function listMatchesByUser(userId) {
+  return listVisibleMatchesStmt.all(userId, userId).map(mapMatchRow);
 }
 
-export function updateRoom(room) {
-  updateRoomStmt.run(
-    room.hostUserId,
-    room.guestUserId ?? null,
-    room.inviteCode ?? null,
-    room.status,
-    room.createdAt,
-    room.updatedAt,
-    serializeRoomPayload(room),
-    room.id
-  );
-}
-
-export function findRoomById(roomId) {
-  return mapRoomRow(findRoomByIdStmt.get(roomId));
-}
-
-export function findRoomByInviteCode(inviteCode) {
-  return mapRoomRow(findRoomByInviteCodeStmt.get(inviteCode));
-}
-
-export function listRoomsByUser(userId) {
-  return listVisibleRoomsStmt.all(userId, userId).map(mapRoomRow);
-}
-
-export function deleteRoom(roomId) {
-  deleteRoomStmt.run(roomId);
+export function deleteMatch(matchId) {
+  deleteMatchStmt.run(matchId);
 }
 
 export function getSystemConfigValue(key) {
@@ -474,20 +383,20 @@ const getLeaderboardStmt = db.query(`
     u.id, 
     u.username,
     (
-      SELECT COUNT(*) FROM games WHERE owner_id = u.id AND winner = 'A'
+      SELECT COUNT(*) FROM matches WHERE mode = 'human-vs-bot' AND owner_id = u.id AND json_extract(data, '$.winner') = 'A'
     ) AS bot_wins,
     (
-      SELECT COUNT(*) FROM games WHERE owner_id = u.id AND winner = 'B'
+      SELECT COUNT(*) FROM matches WHERE mode = 'human-vs-bot' AND owner_id = u.id AND json_extract(data, '$.winner') = 'B'
     ) AS bot_losses,
     (
-      SELECT COUNT(*) FROM rooms WHERE host_id = u.id AND json_extract(payload, '$.winner') = 'A'
+      SELECT COUNT(*) FROM matches WHERE mode = 'human-vs-human' AND json_extract(data, '$.hostUserId') = u.id AND json_extract(data, '$.winner') = 'A'
     ) + (
-      SELECT COUNT(*) FROM rooms WHERE guest_id = u.id AND json_extract(payload, '$.winner') = 'B'
+      SELECT COUNT(*) FROM matches WHERE mode = 'human-vs-human' AND json_extract(data, '$.guestUserId') = u.id AND json_extract(data, '$.winner') = 'B'
     ) AS pvp_wins,
     (
-      SELECT COUNT(*) FROM rooms WHERE host_id = u.id AND json_extract(payload, '$.winner') = 'B'
+      SELECT COUNT(*) FROM matches WHERE mode = 'human-vs-human' AND json_extract(data, '$.hostUserId') = u.id AND json_extract(data, '$.winner') = 'B'
     ) + (
-      SELECT COUNT(*) FROM rooms WHERE guest_id = u.id AND json_extract(payload, '$.winner') = 'A'
+      SELECT COUNT(*) FROM matches WHERE mode = 'human-vs-human' AND json_extract(data, '$.guestUserId') = u.id AND json_extract(data, '$.winner') = 'A'
     ) AS pvp_losses
   FROM users u
   WHERE u.role >= 0

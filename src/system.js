@@ -82,22 +82,22 @@ function buildConfigFromSources() {
     ...dbConfig,
     serverName: getSystemConfigValue("serverName")
       ? dbConfig.serverName
-      : process.env.SERVER_NAME,
+      : process.env.SERVER_NAME || defaultConfig.serverName,
     serverDescription: getSystemConfigValue("serverDescription")
       ? dbConfig.serverDescription
-      : process.env.SERVER_DESCRIPTION,
-    hostname: getSystemConfigValue("hostname") ? dbConfig.hostname : process.env.SERVER_HOSTNAME,
-    serverPort: getSystemConfigValue("serverPort") ? dbConfig.serverPort : process.env.SERVER_PORT,
-    adminPort: getSystemConfigValue("adminPort") ? dbConfig.adminPort : process.env.ADMIN_PORT,
+      : process.env.SERVER_DESCRIPTION || defaultConfig.serverDescription,
+    hostname: getSystemConfigValue("hostname") ? dbConfig.hostname : process.env.SERVER_HOSTNAME || defaultConfig.hostname,
+    serverPort: getSystemConfigValue("serverPort") ? dbConfig.serverPort : process.env.SERVER_PORT || defaultConfig.serverPort,
+    adminPort: getSystemConfigValue("adminPort") ? dbConfig.adminPort : process.env.ADMIN_PORT || defaultConfig.adminPort,
     allowedOrigins: getSystemConfigValue("allowedOrigins")
       ? dbConfig.allowedOrigins
-      : process.env.ALLOWED_ORIGINS,
+      : process.env.ALLOWED_ORIGINS || defaultConfig.allowedOrigins,
     authTokenTtlHours: getSystemConfigValue("authTokenTtlHours")
       ? dbConfig.authTokenTtlHours
-      : process.env.AUTH_TOKEN_TTL_HOURS,
+      : process.env.AUTH_TOKEN_TTL_HOURS || defaultConfig.authTokenTtlHours,
     serviceName: getSystemConfigValue("serviceName")
       ? dbConfig.serviceName
-      : process.env.SERVICE_NAME,
+      : process.env.SERVICE_NAME || defaultConfig.serviceName,
   });
 }
 

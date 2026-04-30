@@ -23,29 +23,23 @@ import adminHtmlPath from "../public/admin/index.html" with { type: "file" };
 import adminJsPath from "../public/admin/app.js" with { type: "file" };
 import adminCssPath from "../public/admin/styles.css" with { type: "file" };
 import {
-  createGame,
-  createRoom,
-  deleteRoom,
-  exchangeOnTie,
-  exchangeRoomOnTie,
-  GameError,
-  refreshRoomInviteCode,
-  getGameState,
-  exportGame,
-  exportAllGames,
-  getRoomState,
-  joinRoomByCode,
+  createMatch,
+  deleteMatchData,
+  exchangeCard,
+  MatchError,
+  refreshMatchInviteCode,
+  getMatchState,
+  getMatchStateDiff,
+  exportMatch,
+  joinMatchByCode,
   listBotStrategies,
-  listGames,
-  listRooms,
-  playRound,
-  renameRoom,
-  requestRoomRematch,
-  RoomError,
-  setRoomReady,
-  submitRoomMove,
+  listMatches,
+  submitMove,
+  renameMatch,
+  requestMatchRematch,
+  setMatchReady,
 } from "./match.js";
-import { getStorePath, getLeaderboard } from "./db.js";
+import { getStorePath, getLeaderboard, db, upsertUser } from "./db.js";
 import logger from "./logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,25 +48,18 @@ const startedAt = Date.now();
 
 global.wsClients = new Set();
 
-export async function broadcastGameState(gameId, result) {
+export async function broadcastMatchState(matchId, result, asDiff = false) {
   if (!global.wsClients) return;
   for (const ws of global.wsClients) {
     if (ws.data && ws.data.userId) {
       try {
-        const gameState = await getGameState(gameId, ws.data.userId);
-        ws.send(JSON.stringify({ action: "game", data: gameState }));
-      } catch (e) {}
-    }
-  }
-}
-
-export async function broadcastRoomState(roomId, result) {
-  if (!global.wsClients) return;
-  for (const ws of global.wsClients) {
-    if (ws.data && ws.data.userId) {
-      try {
-        const roomState = await getRoomState(roomId, ws.data.userId);
-        ws.send(JSON.stringify({ action: "room", data: roomState }));
+        if (asDiff) {
+          const diff = await getMatchStateDiff(matchId, ws.data.userId);
+          ws.send(JSON.stringify({ action: "matchUpdate", data: diff }));
+        } else {
+          const matchState = await getMatchState(matchId, ws.data.userId);
+          ws.send(JSON.stringify({ action: "match", data: matchState }));
+        }
       } catch (e) {}
     }
   }
@@ -98,7 +85,7 @@ function sendOk(data) {
 
 function errorHandler({ code, error, set }) {
   const status =
-    error instanceof AuthError || error instanceof GameError || error instanceof RoomError
+    error instanceof AuthError || error instanceof MatchError
       ? error.status
       : error.status || 500;
   set.status = status;
@@ -132,39 +119,25 @@ export const app = new Elysia()
         ws.data = ws.data || {};
         ws.data.userId = auth.user.id;
 
-        if (message.action === "getGame") {
-          ws.send(JSON.stringify({ action: "game", data: await getGameState(message.gameId, auth.user.id) }));
+        if (message.action === "getMatch") {
+          ws.send(JSON.stringify({ action: "match", data: await getMatchState(message.matchId, auth.user.id) }));
           return;
         }
-        if (message.action === "playRound") {
-          const result = await playRound(message.gameId, auth.user.id, message.payload);
-          ws.send(JSON.stringify({ action: "playRoundResult", data: result }));
-          broadcastGameState(message.gameId, result);
+        if (message.action === "submitMove") {
+          const result = await submitMove(message.matchId, auth.user.id, message.payload);
+          ws.send(JSON.stringify({ action: "moveResult", data: result }));
+          broadcastMatchState(message.matchId, result, true);
           return;
         }
-        if (message.action === "exchange") {
-          const result = await exchangeOnTie(message.gameId, auth.user.id, message.payload);
+        if (message.action === "exchangeCard") {
+          const result = await exchangeCard(message.matchId, auth.user.id, message.payload);
           ws.send(JSON.stringify({ action: "exchangeResult", data: result }));
-          broadcastGameState(message.gameId, result);
+          broadcastMatchState(message.matchId, result, true);
           return;
         }
-        if (message.action === "getRoom") {
-          ws.send(JSON.stringify({ action: "room", data: await getRoomState(message.roomId, auth.user.id) }));
-          return;
-        }
-        if (message.action === "roomRound") {
-          const result = await submitRoomMove(message.roomId, auth.user.id, message.payload);
-          broadcastRoomState(message.roomId, result);
-          return;
-        }
-        if (message.action === "roomExchange") {
-          const result = await exchangeRoomOnTie(message.roomId, auth.user.id, message.payload);
-          broadcastRoomState(message.roomId, result);
-          return;
-        }
-        if (message.action === "roomRematch") {
-          const result = await requestRoomRematch(message.roomId, auth.user.id, message.payload);
-          broadcastRoomState(message.roomId, result);
+        if (message.action === "requestRematch") {
+          const result = await requestMatchRematch(message.matchId, auth.user.id, message.payload);
+          broadcastMatchState(message.matchId, result);
           return;
         }
         ws.send(JSON.stringify({ error: "Unsupported action." }));
@@ -223,51 +196,38 @@ export const app = new Elysia()
       },
       auth: { tokenTtlHours: config.authTokenTtlHours },
     };
-    const games = await listGames(auth.user.id);
-    const rooms = await listRooms(auth.user.id);
-    return sendOk({ info, games, rooms });
-  })
-  .group("/games", app => app
-    .get("/", async ({ auth }) => sendOk(await listGames(auth.user.id)))
-    .post("/", async ({ auth, body, set }) => {
-      set.status = 201;
-      return sendOk(await createGame(auth.user.id, body));
+    const matches = await listMatches(auth.user.id);
+      const games = matches.filter(m => m.mode === "human-vs-bot");
+      const rooms = matches.filter(m => m.mode === "human-vs-human");
+      return sendOk({ info, games, rooms });
     })
-    .get("/:gameId", async ({ auth, params: { gameId } }) => sendOk(await getGameState(gameId, auth.user.id)))
-    .get("/:gameId/export", async ({ auth, params: { gameId }, set }) => {
-      const game = await exportGame(gameId, auth.user.id);
-      set.headers["Content-Type"] = "application/json; charset=utf-8";
-      set.headers["Content-Disposition"] = `attachment; filename="game-${gameId}.json"`;
-      return game;
-    })
-  )
-  .get("/games-export", async ({ auth, set }) => {
-    const games = await exportAllGames(auth.user.id);
-    set.headers["Content-Type"] = "application/json; charset=utf-8";
-    set.headers["Content-Disposition"] = `attachment; filename="games-${auth.user.id}.json"`;
-    return games;
-  })
-  .group("/rooms", app => app
-    .get("/", async ({ auth }) => sendOk(await listRooms(auth.user.id)))
-    .post("/", async ({ auth, body, set }) => {
-      set.status = 201;
-      return sendOk(await createRoom(auth.user, body));
-    })
-    .post("/join", async ({ auth, body }) => sendOk(await joinRoomByCode(auth.user, body)))
-    .get("/:roomId", async ({ auth, params: { roomId } }) => sendOk(await getRoomState(roomId, auth.user.id)))
-    .post("/:roomId/refresh-code", async ({ auth, params: { roomId } }) => {
-      const result = await refreshRoomInviteCode(roomId, auth.user.id);
-      broadcastRoomState(roomId, result);
-      return sendOk(result);
-    })
-    .post("/:roomId/start", async ({ auth, params: { roomId }, body }) => {
-      const result = await setRoomReady(roomId, auth.user.id, body);
-      broadcastRoomState(roomId, result);
-      return sendOk(result);
-    })
-    .put("/:roomId/name", async ({ auth, params: { roomId }, body }) => sendOk(await renameRoom(roomId, auth.user.id, body)))
-    .delete("/:roomId", async ({ auth, params: { roomId } }) => sendOk(await deleteRoom(roomId, auth.user.id)))
-  );
+    .group("/matches", app => app
+      .get("/", async ({ auth }) => sendOk(await listMatches(auth.user.id)))
+      .post("/", async ({ auth, body, set }) => {
+        set.status = 201;
+        return sendOk(await createMatch(auth.user.id, body));
+      })
+      .post("/join", async ({ auth, body }) => sendOk(await joinMatchByCode(body.inviteCode, auth.user.id, auth.user.username)))
+      .get("/:matchId", async ({ auth, params: { matchId } }) => sendOk(await getMatchState(matchId, auth.user.id)))
+      .post("/:matchId/refresh-code", async ({ auth, params: { matchId } }) => {
+        const result = await refreshMatchInviteCode(matchId, auth.user.id);
+        broadcastMatchState(matchId, result);
+        return sendOk(result);
+      })
+      .post("/:matchId/start", async ({ auth, params: { matchId }, body }) => {
+        const result = await setMatchReady(matchId, auth.user.id, body);
+        broadcastMatchState(matchId, result);
+        return sendOk(result);
+      })
+      .put("/:matchId/name", async ({ auth, params: { matchId }, body }) => sendOk(await renameMatch(matchId, auth.user.id, body)))
+      .delete("/:matchId", async ({ auth, params: { matchId } }) => sendOk(await deleteMatchData(matchId, auth.user.id)))
+      .get("/:matchId/export", async ({ auth, params: { matchId }, set }) => {
+        const match = await exportMatch(matchId, auth.user.id);
+        set.headers["Content-Type"] = "application/json; charset=utf-8";
+        set.headers["Content-Disposition"] = `attachment; filename="match-${matchId}.json"`;
+        return match;
+      })
+    );
 
 export const adminApp = new Elysia()
   .use(cors())
@@ -329,6 +289,43 @@ export const adminApp = new Elysia()
       requireMinRole(auth.user, 0);
       return sendOk(saveAdminConfig(body));
     })
+    .group("/backup", app => app
+      .get("/config", ({ auth, set }) => {
+        requireMinRole(auth.user, 0);
+        set.headers["Content-Type"] = "application/json; charset=utf-8";
+        set.headers["Content-Disposition"] = `attachment; filename="478-config-backup.json"`;
+        return getAdminConfig();
+      })
+      .post("/config", async ({ auth, body }) => {
+        requireMinRole(auth.user, 0);
+        return sendOk(saveAdminConfig(body));
+      })
+      .get("/users", ({ auth, set }) => {
+        requireMinRole(auth.user, 0);
+        set.headers["Content-Type"] = "application/json; charset=utf-8";
+        set.headers["Content-Disposition"] = `attachment; filename="478-users-backup.json"`;
+        const { listUsers } = require("./db.js");
+        return listUsers();
+      })
+      .post("/users", async ({ auth, body }) => {
+        requireMinRole(auth.user, 0);
+        if (!Array.isArray(body)) throw new AuthError(400, "Expected an array of users.");
+        const { upsertUser } = require("./db.js");
+        let count = 0;
+        for (const user of body) {
+          if (!user.id || !user.username || !user.passwordHash) continue;
+          upsertUser({
+            id: user.id,
+            username: user.username,
+            passwordHash: user.passwordHash,
+            role: user.role ?? 2,
+            createdAt: user.createdAt ?? new Date().toISOString()
+          });
+          count++;
+        }
+        return sendOk({ imported: count });
+      })
+    )
     .group("/users", app => app
       .get("/", async ({ query }) => {
         const search = String(query.search ?? "").trim().toLowerCase();
@@ -349,6 +346,40 @@ export const adminApp = new Elysia()
       .delete("/:userId", async ({ auth, params: { userId } }) => {
         await deleteManagedUser(auth.user.id, userId);
         return sendOk(true);
+      })
+    )
+    .group("/backup", app => app
+      .get("/config", async ({ auth }) => {
+        requireMinRole(auth.user, 0);
+        return sendOk(getAdminConfig());
+      })
+      .post("/config", async ({ auth, body }) => {
+        requireMinRole(auth.user, 0);
+        return sendOk(saveAdminConfig(body));
+      })
+      .get("/users", async ({ auth }) => {
+        requireMinRole(auth.user, 0);
+        const users = db.query("SELECT * FROM users").all();
+        return sendOk(users);
+      })
+      .post("/users", async ({ auth, body }) => {
+        requireMinRole(auth.user, 0);
+        let count = 0;
+        if (Array.isArray(body)) {
+          for (const u of body) {
+            if (u.id && u.username && u.password_hash) {
+              upsertUser({
+                id: u.id,
+                username: u.username,
+                passwordHash: u.password_hash,
+                role: u.role ?? 2,
+                createdAt: u.created_at || new Date().toISOString()
+              });
+              count++;
+            }
+          }
+        }
+        return sendOk({ imported: count });
       })
     )
   );
