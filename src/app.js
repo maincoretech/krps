@@ -102,7 +102,13 @@ export const app = new Elysia()
     }
   }))
   .onRequest(({ request }) => {
-    logger.info(`${request.method} ${new URL(request.url).pathname}`);
+    const url = new URL(request.url);
+    const path = url.pathname;
+    
+    // 仅打印预期的 API 路由日志，不打印其他杂乱扫描请求
+    if (path === "/" || path.startsWith("/auth") || path.startsWith("/matches") || path.startsWith("/leaderboard") || path.startsWith("/dashboard")) {
+      logger.info(`${request.method} ${path}`);
+    }
   })
   .onError(errorHandler)
   .ws("/", {
