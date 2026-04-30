@@ -29,7 +29,6 @@ import {
   MatchError,
   refreshMatchInviteCode,
   getMatchState,
-  getMatchStateDiff,
   exportMatch,
   joinMatchByCode,
   listBotStrategies,
@@ -53,12 +52,27 @@ export async function broadcastMatchState(matchId, result, asDiff = false) {
   for (const ws of global.wsClients) {
     if (ws.data && ws.data.userId) {
       try {
+        const matchStateRaw = await getMatchState(matchId, ws.data.userId); // getMatchState calls serializeMatch which strips secrets
         if (asDiff) {
-          const diff = await getMatchStateDiff(matchId, ws.data.userId);
+          // Instead of fetching again, we can just pick the fields from the already serialized full state
+          // to create the diff payload, but without the full history.
+          const diff = {
+            id: matchStateRaw.id,
+            status: matchStateRaw.status,
+            winner: matchStateRaw.winner,
+            roundCount: matchStateRaw.roundCount,
+            tieCount: matchStateRaw.tieCount,
+            pool: matchStateRaw.pool,
+            updatedAt: matchStateRaw.updatedAt,
+            players: matchStateRaw.players,
+            startVotes: matchStateRaw.startVotes,
+            rematchVotes: matchStateRaw.rematchVotes,
+            pendingMoves: matchStateRaw.pendingMoves,
+            newHistoryItem: matchStateRaw.history.length > 0 ? matchStateRaw.history[matchStateRaw.history.length - 1] : null
+          };
           ws.send(JSON.stringify({ action: "matchUpdate", data: diff }));
         } else {
-          const matchState = await getMatchState(matchId, ws.data.userId);
-          ws.send(JSON.stringify({ action: "match", data: matchState }));
+          ws.send(JSON.stringify({ action: "match", data: matchStateRaw }));
         }
       } catch (e) {}
     }
