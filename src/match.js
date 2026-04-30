@@ -655,7 +655,7 @@ export async function listMatches(userId) {
 }
 
 export async function getMatchState(matchId, userId) {
-  const match = findMatchById(matchId);
+  const match = getMatchFromCacheOrDb(matchId);
   if (!match) throw new MatchError(404, "Match not found.");
   ensureMatchShape(match);
   
