@@ -1,94 +1,54 @@
-# 478
+# 478 Backend
 
-Persistent card-game backend with:
+极简对战后端。  
+Minimal battle backend.
 
-- user registration and login
-- bearer-token authentication
-- persistent users, sessions, and games in Bun SQLite `data/store.sqlite`
-- one-game export and full export
-- multiple bot algorithms
-- human-vs-bot and human-vs-human room play
+## 规则 / Rules
 
-## Game Modes
+- 双方初始手牌相同。 / Both sides start with the same hand.
+- 牌型规则为石头剪刀布。 / The card rule is rock-paper-scissors.
+- 平局时双方收回原牌。 / On a tie, both take their cards back.
+- 非平局时，败方弃牌入池，胜方随机补一张。 / On a non-tie, the loser sends the card to the pool and the winner draws one.
+- 手牌归零即失败。 / A player loses when their hand reaches zero.
+- 前 3 回合内，连输 2 回合会触发补牌规则。 / In the first 3 rounds, losing 2 in a row triggers recovery.
+- 平局次数达到手牌数时可换牌。 / A player can exchange when tie count reaches hand size.
 
-### Human vs Bot
+## 模式 / Modes
 
-- Player `A` is the human.
-- Player `B` is the machine.
-- Every new game stores one bot strategy.
-- The human chooses only `cardA`.
-- The machine chooses `cardB` automatically from its strategy.
+- 人机对战：玩家出牌，机器人自动响应。 / Bot match: the player moves, the bot responds.
+- 房间对战：双方都出牌后结算。 / Room match: resolution starts after both players move.
+- 支持同房间连续再战。 / Supports rematch in the same room.
 
-### Human vs Human
+## 功能 / Features
 
-- Create a room first, then share a one-time 6-digit invite code.
-- After the second player joins, both players press start in the waiting room.
-- The room switches into a single running match.
-- During each round, both players lock in one card; the round resolves when both sides have submitted.
-- After settlement, both players can choose rematch; when both confirm, the next match starts immediately in the same room.
+- 注册与登录 / Register and login
+- Token 鉴权 / Token auth
+- SQLite 持久化 / SQLite persistence
+- WebSocket 实时同步 / WebSocket real-time sync
+- 多种 Bot 策略 / Multiple bot strategies
+- 管理后台与 CLI / Admin panel and CLI
 
-## Bot Strategies
-
-- `random`: random legal card, random exchange
-- `pattern`: rotate through scissors, rock, paper
-- `counter`: choose the card with the best expected result against the current human hand
-- `adaptive`: predict the human move from history, then counter it
-- `defensive`: prefer cards with lower loss risk, even if it causes more ties
-- `streak`: switch by momentum, use pattern when stable and counter when losing
-
-The bot also auto-uses the tie-exchange rule for player `B` when it becomes available.
-
-## Rules
-
-- Human and machine both start with `["scissors", "rock", "paper"]`.
-- The pool starts with `["scissors", "scissors", "rock", "paper"]`.
-- Base round rule:
-  - tie: both sides take their card back
-  - non-tie: winner keeps the winning card, loser puts the losing card into the pool, then winner randomly draws 1 card from the pool
-- A player who reaches 0 cards after resolution loses the game.
-- Special rule 1:
-  - only active in the first 3 rounds
-  - if one side loses 2 rounds in a row, that side puts the remaining card into the pool and randomly draws 1 card back
-- Special rule 2:
-  - if total tie count equals a player's hand size, that player can exchange 1 hand card with the pool
-  - when a player has only 1 card left, a tie in that round also enables tie-exchange (single-card edge case)
-  - player `A` triggers this manually with the exchange API
-  - player `B` triggers this automatically from its bot logic
-
-## Run
+## 运行 / Run
 
 ```bash
 bun install
 bun dev
 ```
 
-Or run the executable entry directly:
-
 ```bash
 bun run index.js start
 ```
 
-Available CLI commands:
+## CLI
 
-- `start`: start API and admin services
-- `config`: interactive config wizard
-- `passwd`: reset the level 0 super admin password
-- `install`: install a systemd service unit on Linux
-- `remove`: remove the systemd service unit
-- `status`: print current config and executable status
-- `help`: print command help
+- `start` 启动服务 / start services
+- `config` 配置服务 / edit config
+- `passwd` 重置管理员密码 / reset admin password
+- `install` 安装系统服务 / install service
+- `remove` 移除系统服务 / remove service
+- `status` 查看状态 / show status
 
-Admin panel:
-
-- default URL: `http://localhost:47807`
-- allowed roles: level `0` and level `1`
-- features:
-  - admin login/logout
-  - user management
-  - application and match logs
-  - config editing for hostname, ports, description, token TTL and frontend origin whitelist
-
-Optional env vars:
+## 环境变量 / Env
 
 - `SERVER_HOSTNAME`
 - `SERVER_PORT`
@@ -98,13 +58,13 @@ Optional env vars:
 - `ALLOWED_ORIGINS`
 - `AUTH_TOKEN_TTL_HOURS`
 
-Default storage file:
+## 存储 / Storage
 
 ```text
 data/store.sqlite
 ```
 
-Runtime config is also stored in SQLite table `system_config`.
+## 后台 / Admin
 
-On first startup, the backend will try to migrate legacy data from `data.db` and `data/store.json` into SQLite. If an old `data/config.json` exists and the database config table is empty, it will also be imported automatically.
-
+- 默认地址：`http://localhost:47807` / Default URL: `http://localhost:47807`
+- 支持用户、日志、配置管理。 / Manages users, logs, and config.
