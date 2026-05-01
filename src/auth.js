@@ -20,6 +20,7 @@ import logger from "./logger.js";
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{3,32}$/;
 const PASSWORD_MIN_LENGTH = 8;
+const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 export class AuthError extends Error {
   constructor(status, message) {
@@ -78,6 +79,41 @@ async function pruneExpiredSessions() {
   deleteExpiredSessions(now);
 }
 
+async function verifyTurnstileToken(token) {
+  const secret = String(process.env.TURNSTILE_SECRET_KEY ?? "").trim();
+  if (!secret) return;
+
+  const responseToken = String(token ?? "").trim();
+  if (!responseToken) {
+    throw new AuthError(400, "Missing Turnstile token.");
+  }
+
+  let result;
+  try {
+    const response = await fetch(TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        secret,
+        response: responseToken,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Turnstile verify failed with status ${response.status}.`);
+    }
+
+    result = await response.json();
+  } catch (error) {
+    logger.error(`Turnstile verify error: ${error.message}`);
+    throw new AuthError(502, "Turnstile verification unavailable.");
+  }
+
+  if (!result?.success) {
+    throw new AuthError(400, "Turnstile verification failed.");
+  }
+}
+
 function createSessionRecord(userId) {
   const token = randomBytes(32).toString("hex");
   const now = Date.now();
@@ -133,6 +169,7 @@ export async function initializeSysAdmin() {
 
 export async function registerUser(payload) {
   const { username, password } = validateCredentials(payload);
+  await verifyTurnstileToken(payload?.turnstileToken);
   
   await pruneExpiredSessions();
   const existing = findUserByUsername(username);

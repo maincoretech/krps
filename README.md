@@ -57,6 +57,9 @@ bun run index.js start
 - `ADMIN_PORT`
 - `ALLOWED_ORIGINS`
 - `AUTH_TOKEN_TTL_HOURS`
+- `TURNSTILE_SECRET_KEY`
+
+- `TURNSTILE_SECRET_KEY` 只保存在后端，用于调用 Cloudflare `siteverify`。 / `TURNSTILE_SECRET_KEY` stays on the backend and is used for Cloudflare `siteverify`.
 
 ## 存储 / Storage
 
