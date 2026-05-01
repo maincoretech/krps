@@ -21,6 +21,7 @@
   "author": "shiftz300",
   "license": "MPL-2.0",
   "dependencies": {
+    "@elysiajs/bearer": "^1.4.4",
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/static": "^1.4.10",
     "elysia": "^1.4.28"

@@ -112,24 +112,24 @@ function listMatchesByOwner(userId) {
 }
 // --- END CACHE ---
 
-const CARD_ORDER = [0, 1, 2];
-const CARD_BEATS = { 0: 2, 1: 0, 2: 1 };
-const COUNTER_CARD = { 0: 1, 1: 2, 2: 0 };
+const CARD_ORDER = Object.freeze([0, 1, 2]);
+const CARD_BEATS = Object.freeze({ 0: 2, 1: 0, 2: 1 });
+const COUNTER_CARD = Object.freeze({ 0: 1, 1: 2, 2: 0 });
 
-const INITIAL_HAND = [0, 1, 2];
-const INITIAL_POOL = [0, 1, 2, 2];
+const INITIAL_HAND = Object.freeze([0, 1, 2]);
+const INITIAL_POOL = Object.freeze([0, 1, 2, 2]);
 const DEFAULT_BOT_STRATEGY = "random";
 
-const BOT_STRATEGIES = [
+const BOT_STRATEGIES = Object.freeze([
   { id: "random", name: "Random", description: "Play a random legal card and exchange a random card." },
   { id: "pattern", name: "Pattern", description: "Rotate through 0, 1, 2 in a fixed order." },
   { id: "counter", name: "Counter", description: "Choose the card with the best expected result against the human hand." },
   { id: "adaptive", name: "Adaptive", description: "Predict the human's next move from history, then counter it." },
   { id: "defensive", name: "Defensive", description: "Prefer cards with lower loss risk, even if it means taking more ties." },
   { id: "streak", name: "Streak", description: "Switch style by momentum: pattern when stable, counter when losing." },
-];
+]);
 
-const BOT_STRATEGY_MAP = Object.fromEntries(BOT_STRATEGIES.map(s => [s.id, s]));
+const BOT_STRATEGY_MAP = Object.freeze(Object.fromEntries(BOT_STRATEGIES.map(s => [s.id, s])));
 
 export class MatchError extends Error {
   constructor(status, message) {
@@ -198,53 +198,57 @@ export function removeCard(cards, card) {
 
 function createSeatState(userId = null, username = "") {
   return {
-    userId,
-    username,
+    userId: userId != null ? String(userId) : null,
+    username: String(username),
     role: userId ? "human" : "bot",
-    hand: sortCards(INITIAL_HAND),
+    hand: sortCards([...INITIAL_HAND]),
     consecutiveLosses: 0,
     tieExchangeReady: false,
   };
 }
 
 function ensureSeatState(player) {
-  player.userId = player.userId ?? null;
+  player.userId = player.userId != null ? String(player.userId) : null;
   player.username = String(player.username ?? "");
   player.role = player.userId ? "human" : "bot";
-  player.hand = sortCards(Array.isArray(player.hand) ? player.hand : INITIAL_HAND);
-  player.consecutiveLosses = Number(player.consecutiveLosses ?? 0);
+  player.hand = sortCards(Array.isArray(player.hand) ? player.hand.filter(c => [0,1,2].includes(c)) : [...INITIAL_HAND]);
+  player.consecutiveLosses = Math.max(0, Number(player.consecutiveLosses ?? 0));
   player.tieExchangeReady = Boolean(player.tieExchangeReady);
 }
 
 function ensureMatchShape(match) {
-  match.mode = match.mode ?? "human-vs-bot";
+  match.mode = match.mode === "human-vs-human" ? "human-vs-human" : "human-vs-bot";
   match.name = String(match.name ?? "").trim() || `Match ${match.id}`;
-  match.status = match.status ?? "playing";
+  match.status = ["waiting", "playing", "finished"].includes(match.status) ? match.status : "playing";
   match.botStrategy = match.mode === "human-vs-bot" ? normalizeBotStrategy(match.botStrategy) : null;
   
   if (match.mode === "human-vs-human") {
-    match.isPublic = match.isPublic ?? true;
+    match.isPublic = match.isPublic !== false; // true by default
     match.hostUserId = match.hostUserId ?? match.players?.A?.userId ?? null;
     match.guestUserId = match.guestUserId ?? match.players?.B?.userId ?? null;
-    match.inviteCode = match.inviteCode ?? null;
-    match.matchNumber = Number(match.matchNumber ?? 1);
+    match.inviteCode = match.isPublic ? null : String(match.inviteCode ?? "");
+    match.matchNumber = Math.max(1, Number(match.matchNumber ?? 1));
     match.startVotes = { A: Boolean(match.startVotes?.A), B: Boolean(match.startVotes?.B) };
     match.rematchVotes = { A: Boolean(match.rematchVotes?.A), B: Boolean(match.rematchVotes?.B) };
     match.pendingMoves = {
-      A: match.pendingMoves?.A == null ? null : Number(match.pendingMoves.A),
-      B: match.pendingMoves?.B == null ? null : Number(match.pendingMoves.B),
+      A: [0, 1, 2].includes(match.pendingMoves?.A) ? Number(match.pendingMoves.A) : null,
+      B: [0, 1, 2].includes(match.pendingMoves?.B) ? Number(match.pendingMoves.B) : null,
     };
+  } else {
+    match.pendingMoves = match.pendingMoves || null;
   }
 
-  match.winner = match.winner ?? null;
-  match.roundCount = Number(match.roundCount ?? 0);
-  match.tieCount = Number(match.tieCount ?? 0);
-  match.pool = sortCards(Array.isArray(match.pool) ? match.pool : INITIAL_POOL);
+  match.winner = ["A", "B", null].includes(match.winner) ? match.winner : null;
+  match.roundCount = Math.max(0, Number(match.roundCount ?? 0));
+  match.tieCount = Math.max(0, Number(match.tieCount ?? 0));
+  match.pool = sortCards(Array.isArray(match.pool) ? match.pool.filter(c => [0,1,2].includes(c)) : [...INITIAL_POOL]);
   match.history = Array.isArray(match.history) ? match.history : [];
   match.createdAt = match.createdAt ?? new Date().toISOString();
   match.updatedAt = match.updatedAt ?? match.createdAt;
   
-  match.players = match.players ?? { A: createSeatState(), B: createSeatState() };
+  match.players = match.players || {};
+  match.players.A = match.players.A || createSeatState(match.hostUserId);
+  match.players.B = match.players.B || createSeatState(match.guestUserId);
   ensureSeatState(match.players.A);
   ensureSeatState(match.players.B);
 }
@@ -254,7 +258,7 @@ function clonePlayer(player) {
     userId: player.userId,
     username: player.username,
     role: player.role,
-    hand: [...player.hand],
+    hand: [...(player.hand || [])],
     consecutiveLosses: player.consecutiveLosses,
     canExchangeOnTie: player.tieExchangeReady,
   };
@@ -270,7 +274,7 @@ function serializeMatch(match, userId = null) {
     winner: match.winner,
     roundCount: match.roundCount,
     tieCount: match.tieCount,
-    pool: sortCards(match.pool),
+    pool: sortCards([...(match.pool || [])]),
     createdAt: match.createdAt,
     updatedAt: match.updatedAt,
     players: { A: clonePlayer(match.players.A), B: clonePlayer(match.players.B) },
@@ -316,7 +320,7 @@ export function serializeMatchDiff(match, userId = null) {
     winner: match.winner,
     roundCount: match.roundCount,
     tieCount: match.tieCount,
-    pool: sortCards(match.pool),
+    pool: sortCards([...(match.pool || [])]),
     updatedAt: match.updatedAt,
     players: { A: clonePlayer(match.players.A), B: clonePlayer(match.players.B) },
     // Only send the latest history entry instead of the whole array
@@ -342,8 +346,8 @@ export function serializeMatchDiff(match, userId = null) {
   return data;
 }
 
-function summarizeMatch(match) {
-  return {
+function summarizeMatch(match, userId = null) {
+  const data = {
     id: match.id,
     name: match.name,
     mode: match.mode,
@@ -358,8 +362,19 @@ function summarizeMatch(match) {
       hostUserId: match.hostUserId,
       guestUserId: match.guestUserId,
       matchNumber: match.matchNumber,
+      inviteCode: match.inviteCode,
     })
   };
+  if (match.players) {
+    data.players = {
+      A: { userId: match.players.A?.userId, username: match.players.A?.username },
+      B: { userId: match.players.B?.userId, username: match.players.B?.username }
+    };
+    if (userId) {
+      data.selfPlayerId = userId === match.players.A?.userId ? "A" : userId === match.players.B?.userId ? "B" : null;
+    }
+  }
+  return data;
 }
 
 function getWinner(cardA, cardB) {
@@ -619,7 +634,7 @@ export async function createMatch(userId, payload) {
     mode,
     status: mode === "human-vs-human" ? "waiting" : "playing",
     createdAt: now, updatedAt: now,
-    history: [], pool: sortCards(INITIAL_POOL),
+    history: [], pool: sortCards([...INITIAL_POOL]),
     roundCount: 0, tieCount: 0,
     players: { A: createSeatState(), B: createSeatState() }
   };
@@ -631,7 +646,7 @@ export async function createMatch(userId, payload) {
   } else {
     match.name = String(payload?.name ?? "").trim().slice(0, 64) || `Room ${match.id.substring(0, 4).toUpperCase()}`;
     match.isPublic = payload?.isPublic !== false;
-    match.inviteCode = match.isPublic ? null : Math.floor(100000 + Math.random() * 900000).toString();
+    match.inviteCode = match.isPublic ? null : Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
     match.hostUserId = userId;
     match.guestUserId = null;
     match.matchNumber = 1;
@@ -639,8 +654,10 @@ export async function createMatch(userId, payload) {
     match.rematchVotes = { A: false, B: false };
     match.pendingMoves = { A: null, B: null };
     match.players.A = createSeatState(userId, payload?.username ?? "Host");
+    match.players.B = createSeatState();
   }
   
+  ensureMatchShape(match);
   insertMatch(match);
   return serializeMatch(match, userId);
 }
@@ -651,7 +668,7 @@ export async function listMatches(userId) {
   const all = [...botGames, ...pvpGames];
   return all.map(m => { ensureMatchShape(m); return m; })
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .map(summarizeMatch);
+    .map(m => summarizeMatch(m, userId));
 }
 
 export async function getMatchState(matchId, userId) {
@@ -821,12 +838,12 @@ export async function requestMatchRematch(roomId, userId, payload) {
     match.winner = null;
     match.roundCount = 0;
     match.tieCount = 0;
-    match.pool = sortCards(INITIAL_POOL);
+    match.pool = sortCards([...INITIAL_POOL]);
     match.history = [];
     match.rematchVotes = { A: false, B: false };
     match.pendingMoves = { A: null, B: null };
-    match.players.A.hand = sortCards(INITIAL_HAND);
-    match.players.B.hand = sortCards(INITIAL_HAND);
+    match.players.A.hand = sortCards([...INITIAL_HAND]);
+    match.players.B.hand = sortCards([...INITIAL_HAND]);
     match.players.A.consecutiveLosses = 0;
     match.players.B.consecutiveLosses = 0;
     match.players.A.tieExchangeReady = false;
@@ -845,7 +862,8 @@ export async function exportMatch(gameId, userId) {
 export async function refreshMatchInviteCode(roomId, userId) {
   const match = await getOwnedMatch(roomId, userId);
   if (match.mode !== "human-vs-human") throw new MatchError(400, "Not a room.");
-  match.inviteCode = Math.floor(100000 + Math.random() * 900000).toString();
+  // 生成6位数字格式的字符串，补齐前导0
+  match.inviteCode = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
   match.updatedAt = new Date().toISOString();
   updateMatch(match);
   return serializeMatch(match, userId);

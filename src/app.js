@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import { bearer } from "@elysiajs/bearer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -79,20 +80,6 @@ export async function broadcastMatchState(matchId, result, asDiff = false) {
   }
 }
 
-function getBearerToken(headersOrString) {
-  if (!headersOrString) return null;
-  if (typeof headersOrString === "string") {
-    const value = headersOrString.trim();
-    if (!value) return null;
-    if (!value.includes(" ")) return value;
-    const [scheme, token] = value.split(" ");
-    return scheme === "Bearer" && token ? token : null;
-  }
-  const header = headersOrString.authorization ?? "";
-  const [scheme, token] = header.split(" ");
-  return scheme === "Bearer" && token ? token : null;
-}
-
 function sendOk(data) {
   return { status: true, data };
 }
@@ -115,17 +102,16 @@ export const app = new Elysia()
       return false;
     }
   }))
+  .use(bearer())
   .onRequest(({ request }) => {
     const url = new URL(request.url);
     const path = url.pathname;
-    
-    // 仅打印预期的 API 路由日志，不打印其他杂乱扫描请求
     if (path === "/" || path.startsWith("/auth") || path.startsWith("/matches") || path.startsWith("/leaderboard") || path.startsWith("/dashboard")) {
       logger.info(`${request.method} ${path}`);
     }
   })
   .onError(errorHandler)
-  .ws("/", {
+  .ws("/ws", {
     open(ws) {
       global.wsClients.add(ws);
     },
@@ -135,7 +121,10 @@ export const app = new Elysia()
     async message(ws, rawMessage) {
       try {
         const message = typeof rawMessage === "string" ? JSON.parse(rawMessage) : rawMessage;
-        const auth = await authenticateToken(getBearerToken(message.token));
+        let wsToken = message.token;
+        if (wsToken && wsToken.startsWith("Bearer ")) wsToken = wsToken.split(" ")[1];
+        
+        const auth = await authenticateToken(wsToken);
         ws.data = ws.data || {};
         ws.data.userId = auth.user.id;
 
@@ -166,7 +155,7 @@ export const app = new Elysia()
       }
     }
   })
-  .group("/auth", app => app
+  .group("/auth", authGroup => authGroup
     .post("/register", async ({ body, set }) => {
       set.status = 201;
       return sendOk(await registerUser(body));
@@ -174,14 +163,15 @@ export const app = new Elysia()
     .post("/login", async ({ body }) => {
       return sendOk(await loginUser(body));
     })
-    .post("/logout", async ({ headers }) => {
-      await logoutToken(getBearerToken(headers));
-      return sendOk(null);
+  )
+  .group("/auth", authGroup => authGroup
+    .derive(async ({ bearer }) => {
+      const auth = await authenticateToken(bearer);
+      return { auth, token: bearer };
     })
-    .derive(async ({ headers }) => {
-      const token = getBearerToken(headers);
-      const auth = await authenticateToken(token);
-      return { auth, token };
+    .post("/logout", async ({ token }) => {
+      await logoutToken(token);
+      return sendOk(null);
     })
     .get("/me", ({ auth }) => sendOk(auth))
     .put("/me", async ({ auth, body }) => sendOk(await updateUserCredentials(auth.user.id, body)))
@@ -191,32 +181,32 @@ export const app = new Elysia()
       return sendOk({ promoted: body.username });
     })
   )
-  .derive(async ({ headers }) => {
-    const token = getBearerToken(headers);
-    const auth = await authenticateToken(token);
-    return { auth, token };
-  })
   .get("/leaderboard", async () => sendOk(await getLeaderboard()))
-  .get("/dashboard", async ({ auth }) => {
-    const config = getRuntimeConfig();
-    const info = {
-      serverName: config.serverName,
-      serverDescription: config.serverDescription,
-      botStrategies: listBotStrategies(),
-      modes: [
-        { id: "human-vs-bot", name: "Human vs Bot" },
-        { id: "human-vs-human", name: "Human vs Human" },
-      ],
-      server: {
-        name: config.serverName,
-        description: config.serverDescription,
-        host: config.hostname,
-        port: config.serverPort,
-        storage: getStorePath(),
-      },
-      auth: { tokenTtlHours: config.authTokenTtlHours },
-    };
-    const matches = await listMatches(auth.user.id);
+  .group("", protectedApp => protectedApp
+    .derive(async ({ bearer }) => {
+      const auth = await authenticateToken(bearer);
+      return { auth, token: bearer };
+    })
+    .get("/dashboard", async ({ auth }) => {
+      const config = getRuntimeConfig();
+      const info = {
+        serverName: config.serverName,
+        serverDescription: config.serverDescription,
+        botStrategies: listBotStrategies(),
+        modes: [
+          { id: "human-vs-bot", name: "Human vs Bot" },
+          { id: "human-vs-human", name: "Human vs Human" },
+        ],
+        server: {
+          name: config.serverName,
+          description: config.serverDescription,
+          host: config.hostname,
+          port: config.serverPort,
+          storage: getStorePath(),
+        },
+        auth: { tokenTtlHours: config.authTokenTtlHours },
+      };
+      const matches = await listMatches(auth.user.id);
       const games = matches.filter(m => m.mode === "human-vs-bot");
       const rooms = matches.filter(m => m.mode === "human-vs-human");
       return sendOk({ info, games, rooms });
@@ -247,10 +237,12 @@ export const app = new Elysia()
         set.headers["Content-Disposition"] = `attachment; filename="match-${matchId}.json"`;
         return match;
       })
-    );
+    )
+  );
 
 export const adminApp = new Elysia()
   .use(cors())
+  .use(bearer())
   .onRequest(({ request }) => {
     logger.info(`[ADMIN] ${request.method} ${new URL(request.url).pathname}`);
   })
@@ -284,11 +276,12 @@ export const adminApp = new Elysia()
   .group("/api", app => app
     .group("/auth", app => app
       .post("/login", async ({ body }) => sendOk(await loginAdminUser(body)))
-      .derive(async ({ headers }) => {
-        const token = getBearerToken(headers);
-        const auth = await authenticateToken(token);
+    )
+    .group("/auth", app => app
+      .derive(async ({ bearer }) => {
+        const auth = await authenticateToken(bearer);
         requireMinRole(auth.user, 1);
-        return { auth, token };
+        return { auth, token: bearer };
       })
       .post("/logout", async ({ token }) => {
         await logoutToken(token);
@@ -296,110 +289,111 @@ export const adminApp = new Elysia()
       })
       .get("/me", ({ auth }) => sendOk(auth))
     )
-    .derive(async ({ headers }) => {
-      const token = getBearerToken(headers);
-      const auth = await authenticateToken(token);
-      requireMinRole(auth.user, 1);
-      return { auth, token };
-    })
-    .get("/overview", () => sendOk(getAdminOverview(startedAt)))
-    .get("/logs", ({ query }) => sendOk(getAdminLogs(query)))
-    .get("/config", () => sendOk(getAdminConfig()))
-    .put("/config", ({ auth, body }) => {
-      requireMinRole(auth.user, 0);
-      return sendOk(saveAdminConfig(body));
-    })
-    .group("/backup", app => app
-      .get("/config", ({ auth, set }) => {
-        requireMinRole(auth.user, 0);
-        set.headers["Content-Type"] = "application/json; charset=utf-8";
-        set.headers["Content-Disposition"] = `attachment; filename="478-config-backup.json"`;
-        return getAdminConfig();
+    .group("", protectedAdminApi => protectedAdminApi
+      .derive(async ({ bearer }) => {
+        const auth = await authenticateToken(bearer);
+        requireMinRole(auth.user, 1);
+        return { auth, token: bearer };
       })
-      .post("/config", async ({ auth, body }) => {
+      .get("/overview", () => sendOk(getAdminOverview(startedAt)))
+      .get("/logs", ({ query }) => sendOk(getAdminLogs(query)))
+      .get("/config", () => sendOk(getAdminConfig()))
+      .put("/config", ({ auth, body }) => {
         requireMinRole(auth.user, 0);
         return sendOk(saveAdminConfig(body));
       })
-      .get("/users", ({ auth, set }) => {
-        requireMinRole(auth.user, 0);
-        set.headers["Content-Type"] = "application/json; charset=utf-8";
-        set.headers["Content-Disposition"] = `attachment; filename="478-users-backup.json"`;
-        const { listUsers } = require("./db.js");
-        return listUsers();
-      })
-      .post("/users", async ({ auth, body }) => {
-        requireMinRole(auth.user, 0);
-        if (!Array.isArray(body)) throw new AuthError(400, "Expected an array of users.");
-        const { upsertUser } = require("./db.js");
-        let count = 0;
-        for (const user of body) {
-          if (!user.id || !user.username || !user.passwordHash) continue;
-          upsertUser({
-            id: user.id,
-            username: user.username,
-            passwordHash: user.passwordHash,
-            role: user.role ?? 2,
-            createdAt: user.createdAt ?? new Date().toISOString()
+      .group("/backup", app => app
+        .get("/config", ({ auth, set }) => {
+          requireMinRole(auth.user, 0);
+          set.headers["Content-Type"] = "application/json; charset=utf-8";
+          set.headers["Content-Disposition"] = `attachment; filename="478-config-backup.json"`;
+          return getAdminConfig();
+        })
+        .post("/config", async ({ auth, body }) => {
+          requireMinRole(auth.user, 0);
+          return sendOk(saveAdminConfig(body));
+        })
+        .get("/users", ({ auth, set }) => {
+          requireMinRole(auth.user, 0);
+          set.headers["Content-Type"] = "application/json; charset=utf-8";
+          set.headers["Content-Disposition"] = `attachment; filename="478-users-backup.json"`;
+          const { listUsers } = require("./db.js");
+          return listUsers();
+        })
+        .post("/users", async ({ auth, body }) => {
+          requireMinRole(auth.user, 0);
+          if (!Array.isArray(body)) throw new AuthError(400, "Expected an array of users.");
+          const { upsertUser } = require("./db.js");
+          let count = 0;
+          for (const user of body) {
+            if (!user.id || !user.username || !user.passwordHash) continue;
+            upsertUser({
+              id: user.id,
+              username: user.username,
+              passwordHash: user.passwordHash,
+              role: user.role ?? 2,
+              createdAt: user.createdAt ?? new Date().toISOString()
+            });
+            count++;
+          }
+          return sendOk({ imported: count });
+        })
+      )
+      .group("/users", app => app
+        .get("/", async ({ query }) => {
+          const search = String(query.search ?? "").trim().toLowerCase();
+          const role = query.role == null ? null : Number(query.role);
+          const items = (await listManagedUsers()).filter((user) => {
+            if (role != null && Number.isInteger(role) && user.role !== role) return false;
+            if (search && !user.username.toLowerCase().includes(search)) return false;
+            return true;
           });
-          count++;
-        }
-        return sendOk({ imported: count });
-      })
-    )
-    .group("/users", app => app
-      .get("/", async ({ query }) => {
-        const search = String(query.search ?? "").trim().toLowerCase();
-        const role = query.role == null ? null : Number(query.role);
-        const items = (await listManagedUsers()).filter((user) => {
-          if (role != null && Number.isInteger(role) && user.role !== role) return false;
-          if (search && !user.username.toLowerCase().includes(search)) return false;
-          return true;
-        });
-        return sendOk(items);
-      })
-      .post("/", async ({ auth, body, set }) => {
-        set.status = 201;
-        return sendOk(await createManagedUser(auth.user.id, body));
-      })
-      .patch("/:userId", async ({ auth, params: { userId }, body }) => sendOk(await updateManagedUser(auth.user.id, userId, body)))
-      .post("/:userId/reset-password", async ({ auth, params: { userId } }) => sendOk(await resetManagedUserPassword(auth.user.id, userId)))
-      .delete("/:userId", async ({ auth, params: { userId } }) => {
-        await deleteManagedUser(auth.user.id, userId);
-        return sendOk(true);
-      })
-    )
-    .group("/backup", app => app
-      .get("/config", async ({ auth }) => {
-        requireMinRole(auth.user, 0);
-        return sendOk(getAdminConfig());
-      })
-      .post("/config", async ({ auth, body }) => {
-        requireMinRole(auth.user, 0);
-        return sendOk(saveAdminConfig(body));
-      })
-      .get("/users", async ({ auth }) => {
-        requireMinRole(auth.user, 0);
-        const users = db.query("SELECT * FROM users").all();
-        return sendOk(users);
-      })
-      .post("/users", async ({ auth, body }) => {
-        requireMinRole(auth.user, 0);
-        let count = 0;
-        if (Array.isArray(body)) {
-          for (const u of body) {
-            if (u.id && u.username && u.password_hash) {
-              upsertUser({
-                id: u.id,
-                username: u.username,
-                passwordHash: u.password_hash,
-                role: u.role ?? 2,
-                createdAt: u.created_at || new Date().toISOString()
-              });
-              count++;
+          return sendOk(items);
+        })
+        .post("/", async ({ auth, body, set }) => {
+          set.status = 201;
+          return sendOk(await createManagedUser(auth.user.id, body));
+        })
+        .patch("/:userId", async ({ auth, params: { userId }, body }) => sendOk(await updateManagedUser(auth.user.id, userId, body)))
+        .post("/:userId/reset-password", async ({ auth, params: { userId } }) => sendOk(await resetManagedUserPassword(auth.user.id, userId)))
+        .delete("/:userId", async ({ auth, params: { userId } }) => {
+          await deleteManagedUser(auth.user.id, userId);
+          return sendOk(true);
+        })
+      )
+      .group("/backup", app => app
+        .get("/config", async ({ auth }) => {
+          requireMinRole(auth.user, 0);
+          return sendOk(getAdminConfig());
+        })
+        .post("/config", async ({ auth, body }) => {
+          requireMinRole(auth.user, 0);
+          return sendOk(saveAdminConfig(body));
+        })
+        .get("/users", async ({ auth }) => {
+          requireMinRole(auth.user, 0);
+          const users = db.query("SELECT * FROM users").all();
+          return sendOk(users);
+        })
+        .post("/users", async ({ auth, body }) => {
+          requireMinRole(auth.user, 0);
+          let count = 0;
+          if (Array.isArray(body)) {
+            for (const u of body) {
+              if (u.id && u.username && u.password_hash) {
+                upsertUser({
+                  id: u.id,
+                  username: u.username,
+                  passwordHash: u.password_hash,
+                  role: u.role ?? 2,
+                  createdAt: u.created_at || new Date().toISOString()
+                });
+                count++;
+              }
             }
           }
-        }
-        return sendOk({ imported: count });
-      })
+          return sendOk({ imported: count });
+        })
+      )
     )
   );
