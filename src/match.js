@@ -474,6 +474,35 @@ function refreshTieExchangeState(match) {
   }
 }
 
+function applyTieExchange(match, seat, card, extraSummary = {}) {
+  const player = match.players[seat];
+  const normalizedCard = normalizeCard(card);
+
+  if (!player.tieExchangeReady) throw new MatchError(400, "Tie exchange is not available for this player.");
+
+  const drawnCard = drawRandomCard(match.pool);
+  match.pool.push(normalizedCard); // Push after drawing to avoid drawing the same card.
+
+  removeCard(player.hand, normalizedCard);
+  player.hand.push(drawnCard);
+  player.hand = sortCards(player.hand);
+  match.pool = sortCards(match.pool);
+  player.tieExchangeReady = false;
+  match.tieCount = 0;
+  refreshTieExchangeState(match);
+
+  return {
+    type: "tie-exchange",
+    afterRound: match.roundCount,
+    playerId: seat,
+    putIntoPool: normalizedCard,
+    drew: drawnCard,
+    poolAfterExchange: [...match.pool],
+    handAfterExchange: [...player.hand],
+    ...extraSummary,
+  };
+}
+
 function finishMatchIfNeeded(match) {
   if (match.players.A.hand.length === 0) {
     match.status = "finished";
@@ -558,20 +587,12 @@ export function resolveRound(match) {
   // Bot Tie Exchange
   if (match.mode === "human-vs-bot" && match.status === "playing" && match.players.B.tieExchangeReady) {
     const decision = chooseBotExchangeCard(match);
-    const bot = match.players.B;
-    const drawnCard = drawRandomCard(match.pool);
-    match.pool.push(decision.card); // PUSH AFTER DRAWING
-    
-    removeCard(bot.hand, decision.card);
-    bot.hand.push(drawnCard);
-    bot.hand = sortCards(bot.hand);
-    match.pool = sortCards(match.pool);
-    bot.tieExchangeReady = false;
-
-    roundSummary.specialActions.push({
-      type: "bot-tie-exchange", playerId: "B", strategy: match.botStrategy,
-      putIntoPool: decision.card, drew: drawnCard, reason: decision.reason,
+    const exchangeSummary = applyTieExchange(match, "B", decision.card, {
+      type: "bot-tie-exchange",
+      strategy: match.botStrategy,
+      reason: decision.reason,
     });
+    roundSummary.specialActions.push(exchangeSummary);
   }
   
   finishMatchIfNeeded(match);
@@ -724,20 +745,7 @@ export async function exchangeCard(matchId, userId, payload) {
 
   if (!player.tieExchangeReady) throw new MatchError(400, "Tie exchange is not available for this player.");
 
-  const drawnCard = drawRandomCard(match.pool);
-  match.pool.push(card); // PUSH AFTER DRAWING TO FIX BUG
-  
-  removeCard(player.hand, card);
-  player.hand.push(drawnCard);
-  player.hand = sortCards(player.hand);
-  match.pool = sortCards(match.pool);
-  player.tieExchangeReady = false;
-
-  const exchangeSummary = {
-    type: "tie-exchange", afterRound: match.roundCount, playerId: seat,
-    putIntoPool: card, drew: drawnCard,
-    poolAfterExchange: [...match.pool], handAfterExchange: [...player.hand],
-  };
+  const exchangeSummary = applyTieExchange(match, seat, card);
 
   match.history.push(exchangeSummary);
   match.updatedAt = new Date().toISOString();

@@ -1,12 +1,14 @@
 import { describe, test, expect, mock } from "bun:test";
-import { resolveRound, sortCards, getInferredHumanHand, removeCard } from "./src/match.js";
+import { exchangeCard, resolveRound, sortCards, getInferredHumanHand, removeCard } from "./src/match.js";
+
+let currentMockMatch = null;
 
 // Mock minimal dependencies to test the pure logic of resolveRound
 // We mock updateMatch and logger to prevent actual DB writes or logs during tests
 mock.module("./src/db.js", () => {
   return {
     updateMatch: () => {},
-    findMatchById: () => {},
+    findMatchById: () => currentMockMatch,
     insertMatch: () => {},
     listMatchesByOwner: () => {},
     listMatchesByUser: () => {},
@@ -169,6 +171,56 @@ describe("Match Logic Core: resolveRound", () => {
     logState("Assertion", `Tie count is now ${match.tieCount}. Hand size is ${match.players.A.hand.length}. Expecting tieExchangeReady to be true.`);
     expect(match.players.A.tieExchangeReady).toBe(true);
     logState("Success", "Tie Exchange Ready state scenario passed successfully.");
+  });
+
+  test("Tie exchange resets tie count so the rule can trigger again later", async () => {
+    const match = {
+      id: "test-room",
+      mode: "human-vs-human",
+      status: "playing",
+      roundCount: 2,
+      tieCount: 2,
+      pool: [0, 1, 2, 2],
+      history: [],
+      pendingMoves: { A: null, B: null },
+      players: {
+        A: {
+          userId: "user-A",
+          username: "A",
+          role: "human",
+          hand: [0, 1],
+          consecutiveLosses: 0,
+          tieExchangeReady: true,
+        },
+        B: {
+          userId: "user-B",
+          username: "B",
+          role: "human",
+          hand: [0, 1],
+          consecutiveLosses: 0,
+          tieExchangeReady: true,
+        }
+      }
+    };
+    currentMockMatch = match;
+
+    logState("Setup", "Testing repeatable tie exchange in PvP. Player A is already allowed to exchange.");
+    await exchangeCard("test-room", "user-A", { card: 0 });
+
+    logState("Assertion", `After exchange, tie count should reset from 2 to 0. Actual: ${match.tieCount}.`);
+    expect(match.tieCount).toBe(0);
+    expect(match.players.A.tieExchangeReady).toBe(false);
+
+    match.pendingMoves = { A: 1, B: 1 };
+    logState("Action", "Both players tie again once after the exchange.");
+    resolveRound(match);
+
+    logState("Verification", `Tie count should restart from 1, not continue from the old value. Actual: ${match.tieCount}.`);
+    expect(match.tieCount).toBe(1);
+    expect(match.players.A.tieExchangeReady).toBe(false);
+    logState("Success", "Tie exchange can now become available again after new consecutive ties.");
+
+    currentMockMatch = null;
   });
 
   test("Game ends when a player runs out of cards", () => {
