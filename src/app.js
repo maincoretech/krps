@@ -19,7 +19,7 @@ import {
   promoteUser,
   logoutToken
 } from "./auth.js";
-import { getAdminConfig, getAdminLogs, getAdminOverview, saveAdminConfig, getRuntimeConfig } from "./system.js";
+import { getAdminBackupConfig, getAdminConfig, getAdminLogs, getAdminOverview, saveAdminConfig, getRuntimeConfig } from "./system.js";
 import adminHtmlPath from "../public/admin/index.html" with { type: "file" };
 import adminJsPath from "../public/admin/app.js" with { type: "file" };
 import adminCssPath from "../public/admin/styles.css" with { type: "file" };
@@ -307,7 +307,7 @@ export const adminApp = new Elysia()
           requireMinRole(auth.user, 0);
           set.headers["Content-Type"] = "application/json; charset=utf-8";
           set.headers["Content-Disposition"] = `attachment; filename="478-config-backup.json"`;
-          return getAdminConfig();
+          return getAdminBackupConfig();
         })
         .post("/config", async ({ auth, body }) => {
           requireMinRole(auth.user, 0);
@@ -364,7 +364,7 @@ export const adminApp = new Elysia()
       .group("/backup", app => app
         .get("/config", async ({ auth }) => {
           requireMinRole(auth.user, 0);
-          return sendOk(getAdminConfig());
+          return sendOk(getAdminBackupConfig());
         })
         .post("/config", async ({ auth, body }) => {
           requireMinRole(auth.user, 0);

@@ -14,6 +14,7 @@ const defaultConfig = {
   allowedOrigins: ["http://localhost:5173", "http://localhost:4173", "http://localhost:47808"],
   authTokenTtlHours: 72,
   serviceName: "478d",
+  turnstileSecretKey: "",
 };
 
 let cachedConfig = null;
@@ -46,6 +47,10 @@ function normalizeName(value, fallback) {
   return text || fallback;
 }
 
+function normalizeSecret(value) {
+  return String(value ?? "").trim();
+}
+
 function normalizeConfig(input = {}) {
   const config = { ...defaultConfig, ...input };
   return {
@@ -60,6 +65,7 @@ function normalizeConfig(input = {}) {
       defaultConfig.authTokenTtlHours
     ),
     serviceName: normalizeName(config.serviceName, defaultConfig.serviceName),
+    turnstileSecretKey: normalizeSecret(config.turnstileSecretKey),
   };
 }
 
@@ -98,6 +104,9 @@ function buildConfigFromSources() {
     serviceName: getSystemConfigValue("serviceName")
       ? dbConfig.serviceName
       : process.env.SERVICE_NAME || defaultConfig.serviceName,
+    turnstileSecretKey: getSystemConfigValue("turnstileSecretKey")
+      ? dbConfig.turnstileSecretKey
+      : process.env.TURNSTILE_SECRET_KEY || defaultConfig.turnstileSecretKey,
   });
 }
 
@@ -137,6 +146,16 @@ export function getDefaultConfig() {
   return {
     ...defaultConfig,
     allowedOrigins: [...defaultConfig.allowedOrigins],
+  };
+}
+
+function toAdminConfig(config, { includeSecrets = false } = {}) {
+  return {
+    ...config,
+    allowedOrigins: [...config.allowedOrigins],
+    turnstileSecretKey: includeSecrets ? config.turnstileSecretKey : "",
+    turnstileSecretKeyConfigured: Boolean(config.turnstileSecretKey),
+    configStorage: getConfigStorage(),
   };
 }
 
@@ -205,24 +224,26 @@ export function getAdminLogs(query) {
 }
 
 export function getAdminConfig() {
-  return {
-    ...getRuntimeConfig(),
-    configStorage: getConfigStorage(),
-  };
+  return toAdminConfig(getRuntimeConfig());
 }
 
 export function saveAdminConfig(payload) {
   const previous = getRuntimeConfig();
-  const next = updateConfig(payload);
+  const nextPayload = { ...payload };
+  if (!Object.prototype.hasOwnProperty.call(nextPayload, "turnstileSecretKey") || !String(nextPayload.turnstileSecretKey ?? "").trim()) {
+    nextPayload.turnstileSecretKey = previous.turnstileSecretKey;
+  }
+  const next = updateConfig(nextPayload);
   const requiresRestart =
     previous.serverPort !== next.serverPort ||
     previous.adminPort !== next.adminPort ||
     previous.hostname !== next.hostname;
   return {
-    config: {
-      ...next,
-      configStorage: getConfigStorage(),
-    },
+    config: toAdminConfig(next),
     requiresRestart,
   };
+}
+
+export function getAdminBackupConfig() {
+  return toAdminConfig(getRuntimeConfig(), { includeSecrets: true });
 }

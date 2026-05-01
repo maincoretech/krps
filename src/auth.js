@@ -80,7 +80,7 @@ async function pruneExpiredSessions() {
 }
 
 async function verifyTurnstileToken(token) {
-  const secret = String(process.env.TURNSTILE_SECRET_KEY ?? "").trim();
+  const secret = String(getRuntimeConfig().turnstileSecretKey ?? "").trim();
   if (!secret) return;
 
   const responseToken = String(token ?? "").trim();

@@ -266,6 +266,7 @@ async function saveConfig(event) {
     adminPort: Number(form.get("adminPort")),
     authTokenTtlHours: Number(form.get("authTokenTtlHours")),
     serviceName: form.get("serviceName"),
+    turnstileSecretKey: String(form.get("turnstileSecretKey") ?? "").trim(),
     allowedOrigins: String(form.get("allowedOrigins"))
       .split(/\r?\n|,/)
       .map((item) => item.trim())
@@ -649,6 +650,17 @@ function renderConfig() {
         <label>
           <span>systemd Service Name</span>
           <input name="serviceName" value="${config.serviceName}" ${state.me.role === 0 ? "" : "disabled"} />
+        </label>
+        <label class="full">
+          <span>Turnstile Secret Key ${config.turnstileSecretKeyConfigured ? "(Configured)" : "(Not Set)"}</span>
+          <input
+            name="turnstileSecretKey"
+            type="password"
+            value=""
+            placeholder="${config.turnstileSecretKeyConfigured ? "Leave blank to keep current key" : "Enter Cloudflare Turnstile secret key"}"
+            autocomplete="new-password"
+            ${state.me.role === 0 ? "" : "disabled"}
+          />
         </label>
         <label class="full">
           <span>Allowed Origins</span>
