@@ -12,26 +12,46 @@ import {
 
 // --- IN-MEMORY MATCH CACHE ---
 const activeMatches = new Map(); // id -> match object
-const dirtyMatches = new Set();  // set of match ids that need to be flushed
+const pendingPersistIds = new Set();
+const pendingPersistMatches = new Map();
+const MATCH_PERSIST_DEBOUNCE_MS = 150;
+let persistFlushTimer = null;
 
-// Flush dirty matches to SQLite every 2 seconds
-setInterval(() => {
-  if (dirtyMatches.size === 0) return;
-  const toFlush = Array.from(dirtyMatches);
-  dirtyMatches.clear();
-  
-  for (const id of toFlush) {
-    const match = activeMatches.get(id);
-    if (match) {
-      try {
-        dbUpdateMatch(match);
-      } catch (err) {
-        logger.error(`Failed to flush match ${id} to DB: ${err.message}`);
-        dirtyMatches.add(id); // Re-queue on failure
-      }
+function schedulePersistFlush() {
+  if (persistFlushTimer !== null) return;
+  persistFlushTimer = setTimeout(() => {
+    persistFlushTimer = null;
+    flushPersistQueue();
+  }, MATCH_PERSIST_DEBOUNCE_MS);
+}
+
+function flushPersistQueue() {
+  if (pendingPersistIds.size === 0) return;
+  const ids = Array.from(pendingPersistIds);
+  pendingPersistIds.clear();
+
+  for (const id of ids) {
+    const match = pendingPersistMatches.get(id);
+    if (!match) continue;
+    try {
+      dbUpdateMatch(match);
+      pendingPersistMatches.delete(id);
+    } catch (err) {
+      logger.error(`Failed to persist match ${id}: ${err.message}`);
+      pendingPersistIds.add(id);
     }
   }
-}, 2000);
+
+  if (pendingPersistIds.size > 0) {
+    schedulePersistFlush();
+  }
+}
+
+function queueMatchPersist(match) {
+  pendingPersistMatches.set(match.id, match);
+  pendingPersistIds.add(match.id);
+  schedulePersistFlush();
+}
 
 function getMatchFromCacheOrDb(matchId) {
   if (activeMatches.has(matchId)) {
@@ -57,14 +77,15 @@ function findMatchByInviteCode(code) {
 
 function updateMatch(match) {
   if (match.status === "finished") {
-    // Write immediately and remove from memory cache
+    // Terminal state is persisted immediately, then evicted from hot memory.
+    pendingPersistIds.delete(match.id);
+    pendingPersistMatches.delete(match.id);
     dbUpdateMatch(match);
     activeMatches.delete(match.id);
-    dirtyMatches.delete(match.id);
   } else {
-    // Update in memory and mark dirty
+    // Active matches stay hot in memory and are persisted by the event queue.
     activeMatches.set(match.id, match);
-    dirtyMatches.add(match.id);
+    queueMatchPersist(match);
   }
 }
 
@@ -77,7 +98,8 @@ function insertMatch(match) {
 
 function deleteMatchFromStore(matchId) {
   activeMatches.delete(matchId);
-  dirtyMatches.delete(matchId);
+  pendingPersistIds.delete(matchId);
+  pendingPersistMatches.delete(matchId);
   dbDeleteMatch(matchId);
 }
 
@@ -239,6 +261,7 @@ function ensureMatchShape(match) {
   }
 
   match.winner = ["A", "B", null].includes(match.winner) ? match.winner : null;
+  match.version = Math.max(1, Number(match.version ?? 1));
   match.roundCount = Math.max(0, Number(match.roundCount ?? 0));
   match.tieCount = Math.max(0, Number(match.tieCount ?? 0));
   match.pool = sortCards(Array.isArray(match.pool) ? match.pool.filter(c => [0,1,2].includes(c)) : [...INITIAL_POOL]);
@@ -267,6 +290,7 @@ function clonePlayer(player) {
 function serializeMatch(match, userId = null) {
   const data = {
     id: match.id,
+    version: match.version,
     name: match.name,
     ownerId: match.ownerId ?? match.hostUserId,
     mode: match.mode,
@@ -316,6 +340,7 @@ export function serializeMatchDiff(match, userId = null) {
   // This drastically cuts down CPU usage (avoiding history array deep clone) and bandwidth.
   const data = {
     id: match.id,
+    version: match.version,
     status: match.status,
     winner: match.winner,
     roundCount: match.roundCount,
@@ -349,6 +374,7 @@ export function serializeMatchDiff(match, userId = null) {
 function summarizeMatch(match, userId = null) {
   const data = {
     id: match.id,
+    version: match.version,
     name: match.name,
     mode: match.mode,
     status: match.status,
@@ -380,6 +406,12 @@ function summarizeMatch(match, userId = null) {
 function getWinner(cardA, cardB) {
   const MASK = 0b0001100010000100011000;
   return [null, "A", "B"][(MASK >> (((cardA << 2) | cardB) << 1)) & 3];
+}
+
+function commitMatch(match) {
+  match.version = Math.max(0, Number(match.version ?? 0)) + 1;
+  match.updatedAt = new Date().toISOString();
+  updateMatch(match);
 }
 
 // Bot AI Logic
@@ -617,7 +649,6 @@ export function resolveRound(match) {
   }
 
   match.history.push(roundSummary);
-  match.updatedAt = new Date().toISOString();
   
   if (match.mode === "human-vs-human") {
     match.pendingMoves = { A: null, B: null };
@@ -625,7 +656,7 @@ export function resolveRound(match) {
     match.pendingMoves = null;
   }
 
-  updateMatch(match);
+  commitMatch(match);
   return { round: JSON.parse(JSON.stringify(roundSummary)), match: serializeMatch(match) };
 }
 
@@ -654,6 +685,7 @@ export async function createMatch(userId, payload) {
     ownerId: userId,
     mode,
     status: mode === "human-vs-human" ? "waiting" : "playing",
+    version: 1,
     createdAt: now, updatedAt: now,
     history: [], pool: sortCards([...INITIAL_POOL]),
     roundCount: 0, tieCount: 0,
@@ -721,8 +753,7 @@ export async function submitMove(matchId, userId, payload) {
     if (!match.players[seat].hand.includes(card)) throw new MatchError(400, "Card is not in your hand.");
 
     match.pendingMoves[seat] = card;
-    match.updatedAt = new Date().toISOString();
-    updateMatch(match);
+    commitMatch(match);
     
     if (match.pendingMoves.A != null && match.pendingMoves.B != null) {
       return resolveRound(match);
@@ -748,8 +779,7 @@ export async function exchangeCard(matchId, userId, payload) {
   const exchangeSummary = applyTieExchange(match, seat, card);
 
   match.history.push(exchangeSummary);
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
 
   return { exchange: JSON.parse(JSON.stringify(exchangeSummary)), match: serializeMatch(match, userId) };
 }
@@ -769,8 +799,7 @@ export async function joinMatchByCode(inviteCode, userId, username) {
   
   match.guestUserId = userId;
   match.players.B = createSeatState(userId, username);
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
   return serializeMatch(match, userId);
 }
 
@@ -784,8 +813,7 @@ export async function joinPublicMatch(roomId, userId, username) {
   
   match.guestUserId = userId;
   match.players.B = createSeatState(userId, username);
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
   return serializeMatch(match, userId);
 }
 
@@ -804,15 +832,13 @@ export async function leaveMatch(roomId, userId) {
       match.guestUserId = null;
       match.players.B = createSeatState();
       match.startVotes.B = false;
-      match.updatedAt = new Date().toISOString();
-      updateMatch(match);
+      commitMatch(match);
     }
   } else {
     match.status = "finished";
     match.winner = seat === "A" ? "B" : "A";
     match.history.push({ type: "player-left", round: match.roundCount, playerId: seat });
-    match.updatedAt = new Date().toISOString();
-    updateMatch(match);
+    commitMatch(match);
   }
   return serializeMatch(match, userId);
 }
@@ -828,8 +854,7 @@ export async function setMatchReady(roomId, userId, payload) {
     match.status = "playing";
     logger.match(`[${match.name || match.id}] PVP match started`);
   }
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
   return serializeMatch(match, userId);
 }
 
@@ -858,8 +883,7 @@ export async function requestMatchRematch(roomId, userId, payload) {
     match.players.B.tieExchangeReady = false;
     logger.match(`[${match.name || match.id}] PVP rematch #${match.matchNumber} started`);
   }
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
   return serializeMatch(match, userId);
 }
 
@@ -872,8 +896,7 @@ export async function refreshMatchInviteCode(roomId, userId) {
   if (match.mode !== "human-vs-human") throw new MatchError(400, "Not a room.");
   // 生成6位数字格式的字符串，补齐前导0
   match.inviteCode = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
   return serializeMatch(match, userId);
 }
 
@@ -881,8 +904,7 @@ export async function renameMatch(roomId, userId, payload) {
   const match = await getOwnedMatch(roomId, userId);
   if (match.mode !== "human-vs-human") throw new MatchError(400, "Not a room.");
   match.name = String(payload?.name ?? "").trim().slice(0, 64) || match.name;
-  match.updatedAt = new Date().toISOString();
-  updateMatch(match);
+  commitMatch(match);
   return serializeMatch(match, userId);
 }
 

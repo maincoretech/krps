@@ -59,6 +59,7 @@ export async function broadcastMatchState(matchId, result, asDiff = false) {
           // to create the diff payload, but without the full history.
           const diff = {
             id: matchStateRaw.id,
+            version: matchStateRaw.version,
             status: matchStateRaw.status,
             winner: matchStateRaw.winner,
             roundCount: matchStateRaw.roundCount,
