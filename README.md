@@ -1,73 +1,131 @@
-# KRPS Backend
+# KRPS
 
-极简对战后端。  
-Minimal battle backend.
+RPS 卡牌对战 · Bun monorepo（Client + Server + Shared）
 
-## 规则 / Rules
+## 项目结构
 
-- 双方初始手牌相同。 / Both sides start with the same hand.
-- 牌型规则为石头剪刀布。 / The card rule is rock-paper-scissors.
-- 平局时双方收回原牌。 / On a tie, both take their cards back.
-- 非平局时，败方弃牌入池，胜方随机补一张。 / On a non-tie, the loser sends the card to the pool and the winner draws one.
-- 手牌归零即失败。 / A player loses when their hand reaches zero.
-- 前 3 回合内，连输 2 回合会触发补牌规则。 / In the first 3 rounds, losing 2 in a row triggers recovery.
-- 平局次数达到手牌数时可换牌。 / A player can exchange when tie count reaches hand size.
+```
+krps/
+├── packages/
+│   ├── client/    # Svelte 5 前端 (Vite)
+│   ├── server/    # Elysia 后端 (Bun)
+│   └── shared/    # 共享游戏逻辑 & AI
+├── package.json   # monorepo scripts
+└── README.md
+```
 
-## 模式 / Modes
-
-- 人机对战：玩家出牌，机器人自动响应。 / Bot match: the player moves, the bot responds.
-- 房间对战：双方都出牌后结算。 / Room match: resolution starts after both players move.
-- 支持同房间连续再战。 / Supports rematch in the same room.
-
-## 功能 / Features
-
-- 注册与登录 / Register and login
-- Token 鉴权 / Token auth
-- SQLite 持久化 / SQLite persistence
-- WebSocket 实时同步 / WebSocket real-time sync
-- 多种 Bot 策略 / Multiple bot strategies
-- 管理后台与 CLI / Admin panel and CLI
-
-## 运行 / Run
+## 快速开始
 
 ```bash
 bun install
-bun dev
+bun dev                  # 仅后端
+bun run dev:client       # 仅前端
 ```
 
-```bash
-bun run index.js start
-```
+前端 `http://localhost:47808` · 后端 API `:3000` · 管理后台 `:47807`
+
+## 模式
+
+- **人机对战** — 多种 Bot 策略
+- **房间对战** — 邀请码 / 公开房间，双人实时
+- **离线模式** — 本地 Bot 对战，无需登录
+- **回放** — 逐回合手牌/牌堆回放，自动播放
+
+## 功能
+
+- 注册登录 · Token 鉴权 · Turnstile 验证
+- WebSocket 实时同步 · 重连
+- i18n（简体中文 / 繁體中文 / English）
+- SQLite 持久化
+- 管理后台 + CLI
+
+## 脚本
+
+| 命令 | 说明 |
+|------|------|
+| `bun dev` | 启动后端 (API + WS + Admin) |
+| `bun run dev:client` | 启动前端 (Vite HMR) |
+| `bun run build:client` | 构建前端 |
+| `bun test` | 运行测试 |
 
 ## CLI
 
-- `start` 启动服务 / start services
-- `config` 配置服务 / edit config
-- `passwd` 重置管理员密码 / reset admin password
-- `install` 安装系统服务 / install service
-- `remove` 移除系统服务 / remove service
-- `status` 查看状态 / show status
+- `start` — 启动服务
+- `config` — 配置服务
+- `passwd` — 重置管理员密码
+- `install` / `remove` — 安装/移除系统服务
+- `status` — 查看状态
 
-## 环境变量 / Env
+## 环境变量
 
-- `SERVER_HOSTNAME`
-- `SERVER_PORT`
-- `SERVER_NAME`
-- `SERVER_DESCRIPTION`
-- `ADMIN_PORT`
-- `ALLOWED_ORIGINS`
-- `AUTH_TOKEN_TTL_HOURS`
-- `TURNSTILE_SECRET_KEY`
+`SERVER_HOSTNAME` · `SERVER_PORT` · `SERVER_NAME` · `SERVER_DESCRIPTION` · `ADMIN_PORT` · `ALLOWED_ORIGINS` · `AUTH_TOKEN_TTL_HOURS` · `TURNSTILE_SECRET_KEY`
 
-- `TURNSTILE_SECRET_KEY` 只保存在后端，用于调用 Cloudflare `siteverify`。 / `TURNSTILE_SECRET_KEY` stays on the backend and is used for Cloudflare `siteverify`.
-
-## 存储 / Storage
+## 存储
 
 ```text
 data/store.sqlite
 ```
 
-## 后台 / Admin
+## 后台
 
-- 默认地址：`http://localhost:47807` / Default URL: `http://localhost:47807`
-- 支持用户、日志、配置管理。 / Manages users, logs, and config.
+`http://localhost:47807` — 用户、日志、配置管理
+
+---
+
+## English
+
+RPS card battle game · Bun monorepo (Client + Server + Shared)
+
+### Project Structure
+
+```
+krps/
+├── packages/
+│   ├── client/    # Svelte 5 frontend (Vite)
+│   ├── server/    # Elysia backend (Bun)
+│   └── shared/    # Shared game logic & AI
+```
+
+### Quick Start
+
+```bash
+bun install
+bun dev                  # backend only
+bun run dev:client       # frontend only
+```
+
+Frontend `http://localhost:47808` · API `:3000` · Admin `:47807`
+
+### Modes
+
+- **Bot Match** — multiple bot strategies
+- **Room Match** — invite code / public rooms, real-time PVP
+- **Offline** — local bot battle, no login required
+- **Replay** — per-round hand/pool playback with auto-play
+
+### Features
+
+- Auth (register/login) · Token · Turnstile
+- WebSocket real-time sync with reconnect
+- i18n (简体中文 / 繁體中文 / English)
+- SQLite persistence
+- Admin panel + CLI
+
+### Scripts
+
+| Command | Description |
+|---------|-------------|
+| `bun dev` | Start backend |
+| `bun run dev:client` | Start frontend (HMR) |
+| `bun run build:client` | Build frontend |
+| `bun test` | Run tests |
+
+### Storage
+
+```text
+data/store.sqlite
+```
+
+### Admin
+
+`http://localhost:47807` — users, logs, config
