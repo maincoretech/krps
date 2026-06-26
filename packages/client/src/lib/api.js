@@ -3,8 +3,11 @@ import { push } from "svelte-spa-router";
 import toast from "./toast.js";
 
 export function getApiBaseUrl() {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  let base = import.meta.env.VITE_API_BASE_URL;
+  if (base) {
+    // Ensure it has a protocol
+    if (!/^https?:\/\//.test(base)) base = "https://" + base;
+    return base.replace(/\/+$/, "");
   }
   const url = new URL(window.location.href);
   url.port = "3000";

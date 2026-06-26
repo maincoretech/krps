@@ -46,8 +46,8 @@
     if (!isLogin) {
       setTimeout(renderTurnstile, 0);
     } else {
-      if (turnstileWidgetId !== null && window.turnstile) {
-        window.turnstile.remove(turnstileWidgetId);
+      if (turnstileWidgetId != null && window.turnstile) {
+        try { window.turnstile.remove(turnstileWidgetId); } catch {}
         turnstileWidgetId = null;
         turnstileToken = "";
       }
@@ -111,8 +111,8 @@
     }
     return () => {
       window.removeEventListener("keydown", handleKey);
-      if (turnstileWidgetId !== null && window.turnstile) {
-        window.turnstile.remove(turnstileWidgetId);
+      if (turnstileWidgetId != null && window.turnstile) {
+        try { window.turnstile.remove(turnstileWidgetId); } catch {}
       }
     };
   });
