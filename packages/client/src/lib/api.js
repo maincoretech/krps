@@ -17,7 +17,7 @@ export function getApiBaseUrl() {
 export function getWsBaseUrl() {
   const httpUrl = new URL(getApiBaseUrl());
   httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
-  httpUrl.pathname = "/ws";
+  httpUrl.pathname = httpUrl.pathname.replace(/\/?$/, "/ws");
   return httpUrl.href;
 }
 
