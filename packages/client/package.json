@@ -1,0 +1,24 @@
+{
+  "name": "@krps/client",
+  "private": true,
+  "version": "0.0.2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host --port 47808",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@iconify/svelte": "^5.2.2",
+    "svelte": "^5.56.4",
+    "svelte-i18n": "^4.0.0",
+    "svelte-spa-router": "^5.1.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "postcss": "^8.4.41",
+    "postcss-preset-env": "^10.0.2",
+    "cssnano": "^7.0.5",
+    "vite": "^8.1.0"
+  }
+}

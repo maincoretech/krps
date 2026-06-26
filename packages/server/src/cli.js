@@ -27,7 +27,7 @@ function resolveCliArgv(argv) {
 }
 
 function printHelp() {
-  console.log(`478 backend commands:
+  console.log(`krps backend commands:
 
   start      Start services (same as no argument)
   config     Interactive configuration wizard

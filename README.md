@@ -1,4 +1,4 @@
-# 478 Backend
+# KRPS Backend
 
 极简对战后端。  
 Minimal battle backend.

@@ -6,14 +6,14 @@ import {
 } from "./db.js";
 
 const defaultConfig = {
-  serverName: "478 card game backend",
+  serverName: "krps card game backend",
   serverDescription: "Persistent card-game backend with user, game and room management.",
   hostname: "0.0.0.0",
   serverPort: 3000,
   adminPort: 47807,
   allowedOrigins: ["http://localhost:5173", "http://localhost:4173", "http://localhost:47808"],
   authTokenTtlHours: 72,
-  serviceName: "478d",
+  serviceName: "krpsd",
   turnstileSecretKey: "",
 };
 

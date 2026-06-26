@@ -1,5 +1,5 @@
 const app = document.querySelector("#app");
-const tokenKey = "478-admin-token";
+const tokenKey = "krps-admin-token";
 
 const state = {
   token: localStorage.getItem(tokenKey) ?? "",
@@ -160,13 +160,13 @@ async function editUser(userId) {
     let roleSelectHtml = "";
     if (state.me.role === 0) {
       roleSelectHtml = `
-        <label>
-          <span>Role</span>
-          <select name="role">
+        <label class="md-field" style="margin-bottom:0;">
+          <select class="md-select" name="role">
             <option value="0" ${user.role === 0 ? "selected" : ""}>Super Admin</option>
             <option value="1" ${user.role === 1 ? "selected" : ""}>Admin</option>
             <option value="2" ${user.role === 2 ? "selected" : ""}>User</option>
           </select>
+          <span class="md-label">Role</span>
         </label>
       `;
     }
@@ -176,19 +176,20 @@ async function editUser(userId) {
         <h3>Edit User</h3>
         <p>Updating details for <strong>${user.username}</strong>.</p>
         <div class="field-grid" style="margin: 0;">
-          <label>
-            <span>Username (Leave empty to keep unchanged)</span>
-            <input name="username" value="${user.username}" placeholder="New Username" />
+          <label class="md-field" style="margin-bottom:0;">
+            <input class="md-input" name="username" placeholder=" " value="${user.username}" />
+            <span class="md-label">Username (keep unchanged if empty)</span>
           </label>
-          <label>
-            <span>Password (Leave empty to keep unchanged)</span>
-            <input name="password" type="password" placeholder="New Password" />
+          <label class="md-field" style="margin-bottom:0;">
+            <input class="md-input" name="password" type="password" placeholder=" " />
+            <span class="md-label">Password (keep unchanged if empty)</span>
           </label>
+          <div class="pass-hint" id="edit-pass-hint">Leave empty to keep unchanged.</div>
           ${roleSelectHtml}
         </div>
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="edit-user-cancel">Cancel</button>
-          <button type="submit" class="btn">Save Changes</button>
+          <button type="submit" class="btn primary">Save Changes</button>
         </div>
       </form>
     `;
@@ -210,9 +211,10 @@ async function editUser(userId) {
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const fd = new FormData(form);
+      const pw = String(fd.get("password") ?? "").trim();
       const data = {
         username: fd.get("username"),
-        password: fd.get("password"),
+        password: pw || undefined,
       };
       if (state.me.role === 0) {
         data.role = Number(fd.get("role"));
@@ -230,7 +232,7 @@ async function editUser(userId) {
     method: "PATCH",
     body: JSON.stringify({
       username: username.trim() === user.username ? undefined : username.trim(),
-      password: password.trim() || undefined,
+      password: password || undefined,
       role: role !== undefined ? role : user.role,
     }),
   });
@@ -382,14 +384,14 @@ function bindEvents() {
   document.querySelector("#export-config-btn")?.addEventListener("click", async () => {
     try {
       const data = await request("/api/backup/config");
-      downloadJson("478-config-backup.json", data);
+      downloadJson("krps-config-backup.json", data);
     } catch (err) { setMessage(err.message); }
   });
 
   document.querySelector("#export-users-btn")?.addEventListener("click", async () => {
     try {
       const data = await request("/api/backup/users");
-      downloadJson("478-users-backup.json", data);
+      downloadJson("krps-users-backup.json", data);
     } catch (err) { setMessage(err.message); }
   });
 
@@ -422,21 +424,21 @@ function renderLogin() {
   app.innerHTML = `
     <div class="page login-shell">
       <form id="login-form" class="login-card">
-        <h1>478 Admin</h1>
+        <h1>krps Admin</h1>
         <p class="muted">Access restricted to Super Admin (Level 0) and Admin (Level 1).</p>
         ${state.message ? `<div class="message">${state.message}</div>` : ""}
         <div class="field-grid">
-          <label>
-            <span>Username</span>
-            <input name="username" autocomplete="username" required />
+          <label class="md-field">
+            <input class="md-input" name="username" placeholder=" " autocomplete="username" required />
+            <span class="md-label">Username</span>
           </label>
-          <label>
-            <span>Password</span>
-            <input name="password" type="password" autocomplete="current-password" required />
+          <label class="md-field">
+            <input class="md-input" name="password" type="password" placeholder=" " autocomplete="current-password" required />
+            <span class="md-label">Password</span>
           </label>
         </div>
         <div class="btn-row">
-          <button class="btn" type="submit">Login</button>
+          <button class="btn primary" type="submit">Login</button>
         </div>
       </form>
     </div>
@@ -506,25 +508,43 @@ function renderUsers() {
     </div>
     <div class="panel-card">
       <form id="user-filter-form" class="toolbar">
-        <input name="user-search" placeholder="Search Username" />
-        <select name="user-role-filter">
-          <option value="">All Roles</option>
-          <option value="0">Super Admin</option>
-          <option value="1">Admin</option>
-          <option value="2">User</option>
-        </select>
+        <label class="md-field" style="flex:1;min-width:180px;margin-bottom:0;">
+          <input class="md-input" name="user-search" placeholder=" " />
+          <span class="md-label">Search Username</span>
+        </label>
+        <label class="md-field" style="min-width:140px;margin-bottom:0;">
+          <select class="md-select" name="user-role-filter">
+            <option value="">All Roles</option>
+            <option value="0">Super Admin</option>
+            <option value="1">Admin</option>
+            <option value="2">User</option>
+          </select>
+          <span class="md-label">Role</span>
+        </label>
         <button class="btn secondary" type="submit">Filter</button>
       </form>
     </div>
     <div class="panel-card">
-      <form id="create-user-form" class="toolbar">
-        <input name="username" placeholder="New Username" required />
-        <input name="password" type="password" placeholder="Initial Password" required />
-        <select name="role">
-          ${state.me.role === 0 ? '<option value="1">Admin</option>' : ""}
-          <option value="2" selected>User</option>
-        </select>
-        <button class="btn" type="submit">Create User</button>
+      <form id="create-user-form" class="toolbar" style="align-items:flex-start;">
+        <label class="md-field" style="flex:1;min-width:160px;margin-bottom:0;">
+          <input class="md-input" name="username" placeholder=" " required />
+          <span class="md-label">New Username</span>
+        </label>
+        <div style="flex:1;min-width:160px;">
+          <label class="md-field" style="margin-bottom:0;">
+            <input class="md-input" name="password" type="password" placeholder=" " required />
+            <span class="md-label">Initial Password</span>
+          </label>
+          <div class="pass-hint">At least 8 characters.</div>
+        </div>
+        <label class="md-field" style="min-width:120px;margin-bottom:0;">
+          <select class="md-select" name="role">
+            ${state.me.role === 0 ? '<option value="1">Admin</option>' : ""}
+            <option value="2" selected>User</option>
+          </select>
+          <span class="md-label">Role</span>
+        </label>
+        <button class="btn primary" type="submit">Create User</button>
       </form>
     </div>
     <div class="panel-card table-wrap">
@@ -568,25 +588,34 @@ function renderLogs() {
         <div class="muted">View application and match logs.</div>
       </div>
       <div class="actions">
-        <button class="btn secondary ${state.logsScope === "app" ? "active" : ""}" type="button" data-log-scope="app">App Logs</button>
-        <button class="btn secondary ${state.logsScope === "match" ? "active" : ""}" type="button" data-log-scope="match">Match Logs</button>
+        <button class="btn secondary ${state.logsScope === "app" ? "nav-btn active" : ""}" type="button" data-log-scope="app">App Logs</button>
+        <button class="btn secondary ${state.logsScope === "match" ? "nav-btn active" : ""}" type="button" data-log-scope="match">Match Logs</button>
       </div>
     </div>
     <div class="panel-card">
       <form id="logs-filter-form" class="toolbar">
-        <input name="log-search" placeholder="Search Logs" />
-        <select name="log-level">
-          <option value="">All Levels</option>
-          <option value="info">info</option>
-          <option value="warn">warn</option>
-          <option value="error">error</option>
-          <option value="match">match</option>
-        </select>
-        <select name="log-limit">
-          <option value="100">Last 100</option>
-          <option value="200" selected>Last 200</option>
-          <option value="500">Last 500</option>
-        </select>
+        <label class="md-field" style="flex:1;min-width:160px;margin-bottom:0;">
+          <input class="md-input" name="log-search" placeholder=" " />
+          <span class="md-label">Search Logs</span>
+        </label>
+        <label class="md-field" style="min-width:120px;margin-bottom:0;">
+          <select class="md-select" name="log-level">
+            <option value="">All Levels</option>
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+            <option value="match">match</option>
+          </select>
+          <span class="md-label">Level</span>
+        </label>
+        <label class="md-field" style="min-width:120px;margin-bottom:0;">
+          <select class="md-select" name="log-limit">
+            <option value="100">Last 100</option>
+            <option value="200" selected>Last 200</option>
+            <option value="500">Last 500</option>
+          </select>
+          <span class="md-label">Limit</span>
+        </label>
         <button class="btn secondary" type="submit">Refresh</button>
       </form>
     </div>
@@ -613,6 +642,7 @@ function renderConfig() {
   if (!config) {
     return `<div class="panel-card">Loading...</div>`;
   }
+  const disabled = state.me.role === 0 ? "" : "disabled";
   return `
     <div class="content-head">
       <div>
@@ -623,57 +653,50 @@ function renderConfig() {
     ${state.me.role === 0 ? '<div class="notice">Changes to ports or listeners require a service restart to take effect.</div>' : '<div class="notice">You are an Admin. You can only view configuration.</div>'}
     <form id="config-form" class="panel-card">
       <div class="config-grid">
-        <label>
-          <span>Server Name</span>
-          <input name="serverName" value="${config.serverName}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="serverName" placeholder=" " value="${config.serverName}" ${disabled} />
+          <span class="md-label">Server Name</span>
         </label>
-        <label>
-          <span>Description</span>
-          <input name="serverDescription" value="${config.serverDescription || ""}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="serverDescription" placeholder=" " value="${config.serverDescription || ""}" ${disabled} />
+          <span class="md-label">Description</span>
         </label>
-        <label>
-          <span>Host</span>
-          <input name="hostname" value="${config.hostname}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="hostname" placeholder=" " value="${config.hostname}" ${disabled} />
+          <span class="md-label">Host</span>
         </label>
-        <label>
-          <span>API Port</span>
-          <input name="serverPort" type="number" value="${config.serverPort}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="serverPort" placeholder=" " type="number" value="${config.serverPort}" ${disabled} />
+          <span class="md-label">API Port</span>
         </label>
-        <label>
-          <span>Admin Port</span>
-          <input name="adminPort" type="number" value="${config.adminPort}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="adminPort" placeholder=" " type="number" value="${config.adminPort}" ${disabled} />
+          <span class="md-label">Admin Port</span>
         </label>
-        <label>
-          <span>Token TTL (Hours)</span>
-          <input name="authTokenTtlHours" type="number" value="${config.authTokenTtlHours}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="authTokenTtlHours" placeholder=" " type="number" value="${config.authTokenTtlHours}" ${disabled} />
+          <span class="md-label">Token TTL (Hours)</span>
         </label>
-        <label>
-          <span>systemd Service Name</span>
-          <input name="serviceName" value="${config.serviceName}" ${state.me.role === 0 ? "" : "disabled"} />
+        <label class="md-field" style="margin-bottom:0;">
+          <input class="md-input" name="serviceName" placeholder=" " value="${config.serviceName}" ${disabled} />
+          <span class="md-label">systemd Service Name</span>
         </label>
-        <label class="full">
-          <span>Turnstile Secret Key ${config.turnstileSecretKeyConfigured ? "(Configured)" : "(Not Set)"}</span>
-          <input
-            name="turnstileSecretKey"
-            type="password"
-            value=""
-            placeholder="${config.turnstileSecretKeyConfigured ? "Leave blank to keep current key" : "Enter Cloudflare Turnstile secret key"}"
-            autocomplete="new-password"
-            ${state.me.role === 0 ? "" : "disabled"}
-          />
+        <label class="md-field full" style="margin-bottom:0;">
+          <input class="md-input" name="turnstileSecretKey" type="password" placeholder=" " value="" autocomplete="new-password" ${disabled} />
+          <span class="md-label">Turnstile Secret Key ${config.turnstileSecretKeyConfigured ? "(Configured)" : "(Not Set)"}</span>
         </label>
-        <label class="full">
-          <span>Allowed Origins</span>
-          <textarea name="allowedOrigins" rows="6" ${state.me.role === 0 ? "" : "disabled"}>${config.allowedOrigins.join("\n")}</textarea>
+        <label class="md-field full" style="margin-bottom:0;">
+          <textarea class="md-input" name="allowedOrigins" rows="6" placeholder=" " ${disabled}>${config.allowedOrigins.join("\n")}</textarea>
+          <span class="md-label">Allowed Origins</span>
         </label>
-        <label class="full">
-          <span>Config Storage</span>
-          <input value="${config.configStorage.storePath} -> ${config.configStorage.table}" disabled />
+        <label class="md-field full" style="margin-bottom:0;">
+          <input class="md-input" value="${config.configStorage.storePath} -> ${config.configStorage.table}" disabled />
+          <span class="md-label">Config Storage</span>
         </label>
       </div>
       ${
         state.me.role === 0
-          ? '<div class="btn-row" style="margin-top: 24px;"><button class="btn" type="submit">Save Configuration</button></div>'
+          ? '<div class="btn-row" style="margin-top: 24px;"><button class="btn primary" type="submit">Save Configuration</button></div>'
           : ""
       }
     </form>
@@ -747,7 +770,7 @@ function renderShell() {
     <div class="page layout">
       <aside class="sidebar">
         <div>
-          <h2>478 Admin</h2>
+          <h2>krps Admin</h2>
           <div class="muted">${state.me.username} / ${roleName(state.me.role)}</div>
         </div>
         <nav class="nav">

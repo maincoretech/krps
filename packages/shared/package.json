@@ -1,0 +1,11 @@
+{
+  "name": "@krps/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    "./cards": "./cards.js",
+    "./ai": "./ai.js",
+    "./game": "./game.js"
+  }
+}

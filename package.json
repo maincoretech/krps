@@ -1,29 +1,26 @@
 {
-  "name": "478",
+  "name": "krps-monorepo",
   "version": "0.0.1",
-  "description": "478 card game backend with admin panel and CLI",
-  "module": "index.js",
-  "type": "module",
-  "bin": {
-    "478": "./index.js"
-  },
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "bun --watch run index.js",
-    "start": "bun run index.js",
-    "test": "bun test",
-    "benchmark": "bun run benchmark.js",
-    "config": "bun run index.js config",
-    "passwd": "bun run index.js passwd",
-    "install-service": "bun run index.js install",
-    "remove-service": "bun run index.js remove",
-    "status": "bun run index.js status"
+    "dev": "bun run --cwd packages/server dev",
+    "start": "bun run --cwd packages/server start",
+    "dev:client": "bun run --cwd packages/client dev",
+    "dev:client:clean": "lsof -ti :47808 | xargs kill -9 2>/dev/null; sleep 1; bun run --cwd packages/client dev",
+    "build:client": "bun run --cwd packages/client build",
+    "test": "bun test packages/server/match.test.js",
+    "test:e2e": "bun test tests/e2e.test.js",
+    "test:all": "bun test packages/server/match.test.js tests/e2e.test.js",
+    "benchmark": "bun run --cwd packages/server benchmark",
+    "config": "bun run --cwd packages/server config",
+    "passwd": "bun run --cwd packages/server passwd",
+    "install-service": "bun run --cwd packages/server install-service",
+    "remove-service": "bun run --cwd packages/server remove-service",
+    "status": "bun run --cwd packages/server status"
   },
   "author": "shiftz300",
-  "license": "MPL-2.0",
-  "dependencies": {
-    "@elysiajs/bearer": "^1.4.4",
-    "@elysiajs/cors": "^1.4.2",
-    "@elysiajs/static": "^1.4.10",
-    "elysia": "^1.4.28"
-  }
+  "license": "MPL-2.0"
 }

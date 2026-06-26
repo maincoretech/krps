@@ -27,11 +27,13 @@ import {
   createMatch,
   deleteMatchData,
   exchangeCard,
+  leaveMatch,
   MatchError,
   refreshMatchInviteCode,
   getMatchState,
   exportMatch,
   joinMatchByCode,
+  joinPublicMatch,
   listBotStrategies,
   listMatches,
   submitMove,
@@ -64,7 +66,7 @@ export async function broadcastMatchState(matchId, result, asDiff = false) {
             winner: matchStateRaw.winner,
             roundCount: matchStateRaw.roundCount,
             tieCount: matchStateRaw.tieCount,
-            pool: matchStateRaw.pool,
+            poolBits: matchStateRaw.poolBits,
             updatedAt: matchStateRaw.updatedAt,
             players: matchStateRaw.players,
             startVotes: matchStateRaw.startVotes,
@@ -218,7 +220,10 @@ export const app = new Elysia()
         set.status = 201;
         return sendOk(await createMatch(auth.user.id, body));
       })
-      .post("/join", async ({ auth, body }) => sendOk(await joinMatchByCode(body.inviteCode, auth.user.id, auth.user.username)))
+      .post("/join", async ({ auth, body }) => {
+        if (body.matchId) return sendOk(await joinPublicMatch(body.matchId, auth.user.id, auth.user.username));
+        return sendOk(await joinMatchByCode(body.inviteCode, auth.user.id, auth.user.username));
+      })
       .get("/:matchId", async ({ auth, params: { matchId } }) => sendOk(await getMatchState(matchId, auth.user.id)))
       .post("/:matchId/refresh-code", async ({ auth, params: { matchId } }) => {
         const result = await refreshMatchInviteCode(matchId, auth.user.id);
@@ -232,6 +237,7 @@ export const app = new Elysia()
       })
       .put("/:matchId/name", async ({ auth, params: { matchId }, body }) => sendOk(await renameMatch(matchId, auth.user.id, body)))
       .delete("/:matchId", async ({ auth, params: { matchId } }) => sendOk(await deleteMatchData(matchId, auth.user.id)))
+      .post("/:matchId/leave", async ({ auth, params: { matchId } }) => sendOk(await leaveMatch(matchId, auth.user.id)))
       .get("/:matchId/export", async ({ auth, params: { matchId }, set }) => {
         const match = await exportMatch(matchId, auth.user.id);
         set.headers["Content-Type"] = "application/json; charset=utf-8";
@@ -307,7 +313,7 @@ export const adminApp = new Elysia()
         .get("/config", ({ auth, set }) => {
           requireMinRole(auth.user, 0);
           set.headers["Content-Type"] = "application/json; charset=utf-8";
-          set.headers["Content-Disposition"] = `attachment; filename="478-config-backup.json"`;
+          set.headers["Content-Disposition"] = `attachment; filename="krps-config-backup.json"`;
           return getAdminBackupConfig();
         })
         .post("/config", async ({ auth, body }) => {
@@ -317,7 +323,7 @@ export const adminApp = new Elysia()
         .get("/users", ({ auth, set }) => {
           requireMinRole(auth.user, 0);
           set.headers["Content-Type"] = "application/json; charset=utf-8";
-          set.headers["Content-Disposition"] = `attachment; filename="478-users-backup.json"`;
+          set.headers["Content-Disposition"] = `attachment; filename="krps-users-backup.json"`;
           const { listUsers } = require("./db.js");
           return listUsers();
         })
