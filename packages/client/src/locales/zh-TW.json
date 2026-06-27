@@ -70,8 +70,12 @@
     "invite_code": "6 位邀請碼",
     "join_room": "加入房間",
     "manage_prompt": "管理房間 [{{name}}]\n\n1. 重新命名\n2. 刪除",
-    "enter_new_name": "輸入新名稱:",
-    "confirm_delete": "確定要刪除房間 [{{name}}] 嗎?"
+    "enter_new_name": "輸入新名稱",
+    "confirm_delete": "確定要刪除房間 [{{name}}] 嗎?",
+    "rename_btn": "重新命名",
+    "delete_btn": "刪除",
+    "cancel": "取消",
+    "confirm": "確認"
   },
   "room": {
     "title": "多人對戰大廳",

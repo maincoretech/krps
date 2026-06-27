@@ -88,7 +88,10 @@
     }
   }
 
+  let wsStopped = false;
+
   function startWebSocket() {
+    if (wsStopped) return;
     stopWebSocket();
     const token = getStoredToken();
     if (!token) return;
@@ -115,8 +118,10 @@
     };
 
     ws.onclose = () => {
+      if (wsStopped) return;
+      ws = null;
       setTimeout(() => {
-        if (roomId) startWebSocket();
+        if (roomId && !wsStopped) startWebSocket();
       }, 3000);
     };
   }
@@ -125,8 +130,17 @@
     if (ws) { ws.close(); ws = null; }
   }
 
+  let leaving = $state(false);
+
+  async function doLeave() {
+    if (leaving) return;
+    leaving = true;
+    try { await leaveMatch(roomId); } catch {}
+    push("/games");
+  }
+
   function handleKey(e) {
-    if (e.key === "Escape") { push("/games"); return; }
+    if (e.key === "Escape") { doLeave(); return; }
   }
 
   $effect(() => {
@@ -136,8 +150,8 @@
       startWebSocket();
     });
     return () => {
+      wsStopped = true;
       untrack(() => stopWebSocket());
-      if (roomId) leaveMatch(roomId).catch(() => {});
       window.removeEventListener("keydown", handleKey);
     };
   });
@@ -151,7 +165,7 @@
           <div class="eyebrow" style="font-size: 12px; color: rgba(255,255,255,0.4); letter-spacing: 2px;">{$_("room.title")}</div>
           <h2 style="margin: 4px 0 0;">{room.name}</h2>
         </div>
-        <button class="btn icon app-icon-btn" onclick={() => push("/games")}><AppIcon name="close" /></button>
+        <button class="btn icon app-icon-btn" onclick={doLeave}><AppIcon name="close" /></button>
       </div>
 
       <div class="seats row" style="gap: 16px; margin: 24px 0;">

@@ -354,6 +354,11 @@ a { color: inherit; text-decoration: none; }
   transform: translateX(calc(var(--offset) * min(15vw, 65px))) translateY(-30px) scale(1.05) rotate(0);
   z-index: 10;
 }
+.arena .my-cards .card.pending {
+  transform: translateX(calc(var(--offset) * min(15vw, 65px))) translateY(-30px) scale(1.05) rotate(0);
+  box-shadow: 0 0 16px rgba(168,199,250,0.4);
+  z-index: 10;
+}
 
 .arena .center {
   position: absolute; inset: 0;

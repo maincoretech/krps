@@ -43,7 +43,7 @@ const byOwner = (uid) => merge(() => dbByOwner(uid), () => [...active.values()].
 
 // ═══ Shape & Serialize ══════════════════════════════════
 
-const mkSeat = (uid = null, un = "") => ({ userId: uid ? String(uid) : null, username: String(un), hand: HAND, losses: 0, tieEx: 0 });
+const mkSeat = (uid = null, un = "") => ({ userId: uid ? String(uid) : null, username: String(un), hand: HAND, losses: 0, tieEx: 0, tieCount: 0 });
 
 const normSeat = (p) => {
   p.userId = p.userId ? String(p.userId) : null;
@@ -51,6 +51,7 @@ const normSeat = (p) => {
   p.hand = Array.isArray(p.hand) ? p.hand.reduce((b, c) => b + ([1, 8, 64][c] || 0), 0) || HAND : (typeof p.hand === "number" && p.hand >= 0 ? p.hand : HAND);
   p.losses = Math.max(0, Math.min(15, +p.losses || +p.consecutiveLosses || 0));
   p.tieEx = (p.tieEx || p.tieExchangeReady) ? 1 : 0;
+  p.tieCount = Math.max(0, +p.tieCount || 0);
 };
 
 const normMatch = (m) => {
@@ -60,7 +61,6 @@ const normMatch = (m) => {
   m.winner = ["A", "B", null].includes(m.winner) ? m.winner : null;
   m.version = Math.max(1, +m.version || 1);
   m.roundCount = Math.max(0, +m.roundCount || 0);
-  m.tieCount = Math.max(0, +m.tieCount || 0);
   m.pool = Array.isArray(m.pool) ? m.pool.reduce((b, c) => b + ([1, 8, 64][c] || 0), 0) || POOL : (typeof m.pool === "number" && m.pool >= 0 ? m.pool : POOL);
   m.history = Array.isArray(m.history) ? m.history : [];
   m.createdAt = m.createdAt ?? new Date().toISOString();
@@ -80,12 +80,12 @@ const normMatch = (m) => {
   } else { m.botStrategy = getStrategy(String(m.botStrategy ?? "random").trim().toLowerCase()).id; }
 };
 
-const serPlayer = (p) => ({ userId: p.userId, username: p.username, role: p.userId ? "human" : "bot", handBits: p.hand, handSize: cnt(p.hand), losses: p.losses, canExchangeOnTie: !!p.tieEx });
+const serPlayer = (p) => ({ userId: p.userId, username: p.username, role: p.userId ? "human" : "bot", handBits: p.hand, handSize: cnt(p.hand), losses: p.losses, tieCount: p.tieCount || 0, canExchangeOnTie: !!p.tieEx });
 
 const serMatch = (m, uid = null) => {
   const d = {
     id: m.id, version: m.version, name: m.name, ownerId: m.ownerId ?? m.hostUserId,
-    mode: m.mode, status: m.status, winner: m.winner, roundCount: m.roundCount, tieCount: m.tieCount,
+    mode: m.mode, status: m.status, winner: m.winner, roundCount: m.roundCount,
     poolBits: m.pool, createdAt: m.createdAt, updatedAt: m.updatedAt,
     players: { A: serPlayer(m.players.A), B: serPlayer(m.players.B) },
     history: [...m.history],
@@ -123,9 +123,11 @@ const serMatch = (m, uid = null) => {
 
 const sumMatch = (m, uid = null) => ({
   id: m.id, version: m.version, name: m.name, mode: m.mode, status: m.status, winner: m.winner,
-  roundCount: m.roundCount, tieCount: m.tieCount, updatedAt: m.updatedAt, createdAt: m.createdAt,
+  roundCount: m.roundCount, updatedAt: m.updatedAt, createdAt: m.createdAt, ownerId: m.ownerId,
   ...(m.mode === "human-vs-bot" ? { botStrategy: m.botStrategy } : { isPublic: m.isPublic, hostUserId: m.hostUserId, guestUserId: m.guestUserId, matchNumber: m.matchNumber, inviteCode: m.inviteCode }),
-  players: m.players ? { A: { userId: m.players.A?.userId, username: m.players.A?.username }, B: { userId: m.players.B?.userId, username: m.players.B?.username }, ...(uid ? { selfPlayerId: uid === m.players.A?.userId ? "A" : uid === m.players.B?.userId ? "B" : null } : {}) } : undefined,
+  selfPlayerId: uid ? (uid === m.players?.A?.userId ? "A" : uid === m.players?.B?.userId ? "B" : null) : undefined,
+  isOwner: uid ? uid === m.ownerId : false,
+  players: m.players ? { A: { userId: m.players.A?.userId, username: m.players.A?.username }, B: { userId: m.players.B?.userId, username: m.players.B?.username } } : undefined,
 });
 
 const commit = (m) => { m.version++; m.updatedAt = new Date().toISOString(); upd(m); };
@@ -136,12 +138,18 @@ const resolveServerRound = (m) => {
   const ca = m.pendingMoves?.A ?? m.pendingMoves?.cardA;
   const cb = m.pendingMoves?.B ?? m.pendingMoves?.cardB;
 
+  // If a player had tie exchange available but didn't use it, reset their tie counter
+  if (m.mode === "human-vs-human") {
+    if (m.players.A.tieEx) m.players.A.tieCount = 0;
+    if (m.players.B.tieEx) m.players.B.tieCount = 0;
+  }
+
   // Build a compatible state object for the shared engine
-  const st = { pool: m.pool, roundCount: m.roundCount, tieCount: m.tieCount, status: m.status, winner: m.winner, history: m.history, players: m.players };
+  const st = { pool: m.pool, roundCount: m.roundCount, status: m.status, winner: m.winner, history: m.history, players: m.players };
   const result = doRound(st, ca, cb, m.mode === "human-vs-bot" ? m.botStrategy : null);
 
   // Sync back
-  m.pool = st.pool; m.roundCount = st.roundCount; m.tieCount = st.tieCount;
+  m.pool = st.pool; m.roundCount = st.roundCount;
   m.status = st.status; m.winner = st.winner; m.history = st.history;
   m.players = st.players;
   // Record per-round snapshot as a single packed u32 (pool:bits 0-8, handA:9-17, handB:18-26)
@@ -162,7 +170,7 @@ const serverTieExchange = (m, seat, card) => {
   const d = draw(m.pool);
   p.hand = add(p.hand, d.card);
   m.pool = d.np;
-  p.tieEx = 0; m.tieCount = 0;
+  p.tieEx = 0; p.tieCount = 0;
   return { type: "tie-exchange", afterRound: m.roundCount, playerId: seat, putIntoPool: card, drew: d.card, poolAfterExchange: unpack(m.pool), handAfterExchange: unpack(p.hand) };
 };
 
@@ -196,7 +204,7 @@ export async function createMatch(uid, p) {
 }
 
 export const listMatches = async (uid) => {
-  const all = [...byOwner(uid).filter(m => m.mode === "human-vs-bot"), ...byUser(uid).filter(m => m.mode === "human-vs-human")];
+  const all = [...byUser(uid)];
   return all.map(m => { normMatch(m); return m; }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(m => sumMatch(m, uid));
 };
 
@@ -248,8 +256,7 @@ export const leaveMatch = async (rid, uid) => {
   const m = cacheGet(rid); if (!m || m.mode !== "human-vs-human") return; normMatch(m);
   const seat = m.players.A.userId === uid ? "A" : m.players.B.userId === uid ? "B" : null; if (!seat) return;
   if (m.status === "waiting") { if (seat === "A") del(m.id); else { m.guestUserId = null; m.players.B = mkSeat(); m.startVotes.B = false; commit(m); } }
-  else { m.status = "finished"; m.winner = seat === "A" ? "B" : "A"; m.history.push({ type: "player-left", round: m.roundCount, playerId: seat }); commit(m); }
-  return serMatch(m, uid);
+  // playing: do nothing — player can reconnect and continue
 };
 
 export const setMatchReady = async (rid, uid, p) => {

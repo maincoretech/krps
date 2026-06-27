@@ -70,8 +70,12 @@
     "invite_code": "6-digit Invite Code",
     "join_room": "JOIN ROOM",
     "manage_prompt": "Manage Room [{{name}}]\n\n1. Rename Room\n2. Delete Room",
-    "enter_new_name": "Enter new room name:",
-    "confirm_delete": "Are you sure you want to delete room [{{name}}]?"
+    "enter_new_name": "Enter new name",
+    "confirm_delete": "Are you sure you want to delete room [{{name}}]?",
+    "rename_btn": "Rename",
+    "delete_btn": "Delete",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   },
   "room": {
     "title": "MULTIPLAYER LOBBY",

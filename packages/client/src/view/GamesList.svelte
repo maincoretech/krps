@@ -41,6 +41,9 @@
     if (userDropdownOpen && !e.target.closest(".user-menu-wrapper")) {
       userDropdownOpen = false;
     }
+    if (strategyOpen && !e.target.closest(".strategy-dropdown")) {
+      strategyOpen = false;
+    }
   }
 
   let games = $state([]);
@@ -55,7 +58,9 @@
   let profileData = $state({ username: getStoredUser() });
   let editProfileForm = $state({ username: "", currentPassword: "", newPassword: "" });
 
-  let activeGame = $derived(games.find((g) => g.status === "playing"));
+  let activeGame = $derived(myGames.find((g) => g.status === "playing"));
+
+  let myGames = $derived([...games, ...rooms.filter(r => r.selfPlayerId)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
 
   let filteredRooms = $derived((() => {
     if (roomTab === "public") {
@@ -168,37 +173,44 @@
     push(`/room/${room.id}/battle`);
   }
 
-  async function manageRoom(room) {
-    const action = window.prompt($_("home.manage_prompt").replace("{{name}}", room.name), "1");
-    if (!action) return;
+  let manageDialog = $state({ open: false, room: null, step: "menu", newName: "" });
+  let strategyOpen = $state(false);
 
-    if (action === "1") {
-      const newName = window.prompt($_("home.enter_new_name"), room.name);
-      if (newName && newName !== room.name) {
-        loading = true;
-        try {
-          await renameMatch(room.id, newName);
-          await load();
-        } catch (error) {
-          toast.fromError(error, "toast.games_rename_failed");
-        } finally {
-          loading = false;
-        }
-      }
-    } else if (action === "2") {
-      if (window.confirm($_("home.confirm_delete").replace("{{name}}", room.name))) {
-        loading = true;
-        try {
-          await deleteMatch(room.id);
-          await load();
-        } catch (error) {
-          toast.fromError(error, "toast.games_delete_failed");
-        } finally {
-          loading = false;
-        }
-      }
-    } else {
-      toast.error("toast.games_invalid_action");
+  function openManageDialog(room) {
+    manageDialog = { open: true, room, step: "menu", newName: room.name };
+  }
+
+  function closeManageDialog() {
+    manageDialog = { open: false, room: null, step: "menu", newName: "" };
+  }
+
+  async function doRename() {
+    const room = manageDialog.room;
+    const newName = manageDialog.newName.trim();
+    if (!newName || newName === room.name) { closeManageDialog(); return; }
+    loading = true;
+    try {
+      await renameMatch(room.id, newName);
+      await load();
+      closeManageDialog();
+    } catch (error) {
+      toast.fromError(error, "toast.games_rename_failed");
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function doDeleteRoom() {
+    const room = manageDialog.room;
+    loading = true;
+    try {
+      await deleteMatch(room.id);
+      await load();
+      closeManageDialog();
+    } catch (error) {
+      toast.fromError(error, "toast.games_delete_failed");
+    } finally {
+      loading = false;
     }
   }
 
@@ -327,7 +339,7 @@
         <div class="home-hero">
           <div class="home-play-row">
             <button class="btn primary home-play" onclick={quickPlay} disabled={loading}>{$_("home.quick_play")}</button>
-            <button class="btn home-resume" disabled={!activeGame} onclick={() => activeGame && push(`/battle/${activeGame.id}`)}>{$_("home.resume")}</button>
+            <button class="btn home-resume" disabled={!activeGame} onclick={() => activeGame && (activeGame.mode === "human-vs-human" ? push(`/room/${activeGame.id}/battle`) : push(`/battle/${activeGame.id}`))}>{$_("home.resume")}</button>
           </div><div class="home-actions">
             <button class="btn home-act" onclick={openPlayConfig} disabled={loading}><AppIcon name="deployed-code" /><span>{$_("home.custom")}</span></button>
             <button class="btn home-act" onclick={() => (view = "multiplayer")} disabled={loading}><AppIcon name="person" /><span>{$_("home.multiplayer")}</span></button>
@@ -360,15 +372,18 @@
                 {/each}
               {/if}
             {:else}
-              {#if games.length === 0}
+              {#if myGames.length === 0}
                 <div class="app-empty">{$_("home.no_games")}</div>
               {:else}
-                {#each games as game (game.id)}
-                  <button class="match-card" onclick={() => push(`/${game.status === "finished" ? "replay" : "battle"}/${game.id}`)}>
+                {#each myGames as game (game.id)}
+                  <button class="match-card" onclick={(e) => { if (e.target.closest('.js-manage')) return; game.mode === "human-vs-human" ? openRoom(game) : push(`/${game.status === "finished" ? "replay" : "battle"}/${game.id}`); }}>
                     <div>
                       <div style="font-weight:700;">{game.name}</div>
-                      <div style="font-size:12px;color:rgba(255,255,255,0.4);">R{game.roundCount} · {game.mode}</div>
+                      <div style="font-size:12px;color:rgba(255,255,255,0.4);">{game.mode === "human-vs-human" ? `${game.players.A?.username || $_("home.host")} vs ${game.players.B?.username || $_("home.waiting")}` : `R${game.roundCount} · ${game.mode}`}</div>
                     </div>
+                    {#if game.isOwner && game.mode === "human-vs-human"}
+                      <span class="btn text js-manage" style="font-size:11px;padding:2px 8px;height:auto;cursor:pointer;margin-left:auto;margin-right:8px;" onclick={() => openManageDialog(game)} onkeydown={(e) => e.key === 'Enter' && openManageDialog(game)}>{$_("home.manage")}</span>
+                    {/if}
                     <span class="status {game.status}">{game.status}</span>
                   </button>
                 {/each}
@@ -398,14 +413,18 @@
               <input class="md-input" type="text" bind:value={form.name} placeholder=" " disabled={loading} />
               <span class="md-label">{$_("home.game_name")}</span>
             </label>
-            <label class="md-field">
-              <select class="md-select" bind:value={form.botStrategy} disabled={loading}>
-                <option disabled value="">{$_("home.select_strategy")}</option>
-                {#each strategies as s (s.id)}
-                  <option value={s.id}>{s.name}</option>
-                {/each}
-              </select>
-              <span class="md-label">{$_("home.bot_strategy")}</span>
+            <label class="md-field strategy-dropdown">
+              <button class="md-select" style="text-align:left;" onclick={() => (strategyOpen = !strategyOpen)} disabled={loading}>
+                {strategies.find(s => s.id === form.botStrategy)?.name || $_("home.select_strategy")}
+              </button>
+              {#if strategyOpen}
+                <div class="strategy-menu">
+                  {#each strategies as s (s.id)}
+                    <button class="strategy-item" class:active={form.botStrategy === s.id} onclick={() => { form.botStrategy = s.id; strategyOpen = false; }}>{s.name}</button>
+                  {/each}
+                </div>
+              {/if}
+              <span class="md-label" class:floating={form.botStrategy}>{$_("home.bot_strategy")}</span>
             </label>
             {#if strategies.length}
               {@const selected = strategies.find(s => s.id === form.botStrategy)}
@@ -436,13 +455,13 @@
                 <div class="app-empty">{$_("home.no_rooms_found")}</div>
               {:else}
                 {#each filteredRooms as room (room.id)}
-                  <button class="match-card" onclick={() => openRoom(room)}>
+                  <button class="match-card" onclick={(e) => { if (e.target.closest('.js-manage')) return; openRoom(room); }}>
                     <div>
                       <div style="font-weight:700;">{room.name}</div>
                       <div style="font-size:12px;color:rgba(255,255,255,0.4);">{room.players.A?.username || $_("home.host")} vs {room.players.B?.userId ? room.players.B.username : $_("home.waiting")}</div>
                     </div>
-                    {#if room.selfPlayerId}
-                      <span role="button" tabindex="0" class="btn text" style="font-size:11px;padding:2px 8px;height:auto;cursor:pointer;" onclick={(e) => { e.stopPropagation(); manageRoom(room); }} onkeydown={(e) => e.key === 'Enter' && manageRoom(room)}>{$_("home.manage")}</span>
+                    {#if room.isOwner && room.mode === "human-vs-human"}
+                      <span class="btn text js-manage" style="font-size:11px;padding:2px 8px;height:auto;cursor:pointer;margin-left:auto;margin-right:8px;" onclick={() => openManageDialog(room)} onkeydown={(e) => e.key === 'Enter' && openManageDialog(room)}>{$_("home.manage")}</span>
                     {/if}
                     <span class="status waiting">WAITING</span>
                   </button>
@@ -502,9 +521,41 @@
       </div>
     </div>
   {/if}
+
+  {#if manageDialog.open}
+    <div class="modal-overlay" onclick={closeManageDialog} onkeydown={(e) => e.key === 'Escape' && closeManageDialog()}>
+      <div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+        {#if manageDialog.step === "menu"}
+          <h3 style="margin:0 0 12px;font-size:16px;">{$_("home.manage")} — {manageDialog.room.name}</h3>
+          <button class="btn primary" style="width:100%;margin-bottom:8px;" onclick={() => (manageDialog.step = "rename")}>{$_("home.rename_btn")}</button>
+          <button class="btn warn" style="width:100%;margin-bottom:8px;" onclick={doDeleteRoom} disabled={loading}>{$_("home.delete_btn")}</button>
+          <button class="btn text" style="width:100%;" onclick={closeManageDialog}>{$_("home.cancel")}</button>
+        {:else if manageDialog.step === "rename"}
+          <h3 style="margin:0 0 12px;font-size:16px;">{$_("home.rename_btn")}</h3>
+          <label class="md-field" style="margin-bottom:12px;">
+            <input class="md-input" type="text" bind:value={manageDialog.newName} placeholder=" " onkeydown={(e) => e.key === 'Enter' && doRename()} />
+            <span class="md-label">{$_("home.room_name")}</span>
+          </label>
+          <div style="display:flex;gap:8px;">
+            <button class="btn primary" style="flex:1;" onclick={doRename} disabled={loading || !manageDialog.newName.trim()}>{$_("home.confirm")}</button>
+            <button class="btn text" style="flex:1;" onclick={() => (manageDialog.step = "menu")}>{$_("home.cancel")}</button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; }
+  .modal-box { background:var(--color-surface-container); border-radius:var(--radius-xl); padding:24px; min-width:280px; max-width:360px; width:90%; }
+  .strategy-dropdown { position:relative; }
+  .strategy-dropdown .md-select { padding-right:36px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.6)' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; }
+  .strategy-menu { position:absolute; top:100%; left:0; right:0; z-index:100; background:var(--color-surface-container); border-radius:var(--radius-md); margin-top:4px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.5); }
+  .strategy-item { display:block; width:100%; padding:10px 14px; border:none; background:transparent; color:#fff; font-size:13px; text-align:left; cursor:pointer; font-family:inherit; transition:background 0.15s; }
+  .strategy-item:hover { background:rgba(255,255,255,0.06); }
+  .strategy-item.active { color:var(--color-primary); }
+  .md-label.floating { top:6px; font-size:11px; color:var(--color-primary); font-weight:600; }
   .home-hero { display:flex; flex-direction:column; align-items:center; padding:80px 0 12px; gap:16px; }
   .home-play-row { display:flex; gap:8px; width:100%; max-width:300px; }
   .home-play { flex:3; height:56px; font-size:16px; font-weight:700; letter-spacing:2px; border-radius:999px 150px 150px 999px; }

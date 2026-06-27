@@ -7,22 +7,20 @@ import { botPick, botExchangePick } from "./ai.js";
 export const createState = () => ({
   pool: POOL,
   roundCount: 0,
-  tieCount: 0,
   status: "playing",
   winner: null,
   history: [],
   players: {
-    A: { hand: HAND, losses: 0, tieEx: 0 },
-    B: { hand: HAND, losses: 0, tieEx: 0 },
+    A: { hand: HAND, losses: 0, tieEx: 0, tieCount: 0 },
+    B: { hand: HAND, losses: 0, tieEx: 0, tieCount: 0 },
   },
 });
 
 /** Recalculate tie-exchange eligibility */
 const refreshTieEx = (state) => {
   if (state.status !== "playing") { state.players.A.tieEx = 0; state.players.B.tieEx = 0; return; }
-  const t = state.tieCount;
-  state.players.A.tieEx = (t > 0 && t === cnt(state.players.A.hand)) ? 1 : 0;
-  state.players.B.tieEx = (t > 0 && t === cnt(state.players.B.hand)) ? 1 : 0;
+  state.players.A.tieEx = (state.players.A.tieCount > 0 && state.players.A.tieCount === cnt(state.players.A.hand)) ? 1 : 0;
+  state.players.B.tieEx = (state.players.B.tieCount > 0 && state.players.B.tieCount === cnt(state.players.B.hand)) ? 1 : 0;
 };
 
 const finishCheck = (state) => {
@@ -68,7 +66,7 @@ export const resolveRound = (state, cardA, cardB, botStrategy = null) => {
     pa.hand = add(pa.hand, cardA);
     pb.hand = add(pb.hand, cardB);
     pa.losses = 0; pb.losses = 0;
-    state.tieCount++;
+    pa.tieCount++; pb.tieCount++;
   } else {
     const [wid, lid] = w === 1 ? ["A", "B"] : ["B", "A"];
     const winner = state.players[wid], loser = state.players[lid];
@@ -79,7 +77,7 @@ export const resolveRound = (state, cardA, cardB, botStrategy = null) => {
     winner.hand = add(winner.hand, d.card);
     winner.losses = 0;
     loser.losses++;
-    state.tieCount = 0;
+    pa.tieCount = 0; pb.tieCount = 0;
   }
 
   state.roundCount = rn;
@@ -98,8 +96,7 @@ export const resolveRound = (state, cardA, cardB, botStrategy = null) => {
       const d = draw(state.pool);
       pb.hand = add(pb.hand, d.card);
       state.pool = d.np;
-      pb.tieEx = 0;
-      state.tieCount = 0;
+      pb.tieEx = 0; pb.tieCount = 0;
       actions.push({ type: "bot-tie-exchange", playerId: "B", putIntoPool: c, drew: d.card });
     }
     refreshTieEx(state);
@@ -122,12 +119,11 @@ export const resolveRound = (state, cardA, cardB, botStrategy = null) => {
     state: {
       pool: unpack(state.pool),
       roundCount: state.roundCount,
-      tieCount: state.tieCount,
       status: state.status,
       winner: state.winner,
       players: {
-        A: { hand: unpack(pa.hand), losses: pa.losses, canExchangeOnTie: !!pa.tieEx },
-        B: { hand: unpack(pb.hand), losses: pb.losses, canExchangeOnTie: !!pb.tieEx },
+        A: { hand: unpack(pa.hand), losses: pa.losses, tieCount: pa.tieCount, canExchangeOnTie: !!pa.tieEx },
+        B: { hand: unpack(pb.hand), losses: pb.losses, tieCount: pb.tieCount, canExchangeOnTie: !!pb.tieEx },
       },
       history: [...state.history],
     },
